@@ -69,6 +69,78 @@ If you're not sure where to start, open an issue and we'll point you somewhere u
 
 Set `BH_DOMAIN_SKILLS=1` to enable [agent-workspace/domain-skills/](agent-workspace/domain-skills/) — community-contributed per-site playbooks `goto_url` surfaces by domain. Contribute via PR.
 
+## Xiaohongshu Crawler Skill
+
+A Claude Code skill for batch crawling Xiaohongshu (小红书/RedNote) notes — search, extract content + comments, download images, and export to Excel.
+
+**This is a [Claude Code](https://claude.ai/code) skill**, not a standalone tool. It runs inside Claude Code via browser-harness CDP.
+
+### What it does
+
+1. **Search** — searches XHS for any keyword, reads results in waterfall layout order (left→right, top→bottom)
+2. **Crawl** — opens each note card, extracts title, description, post images, and all comments (including nested replies and AI Q&A summaries)
+3. **Download** — saves all post images and comment images to disk
+4. **Export** — generates an Excel file with:
+   - Color-coded post rows (each post gets a unique color)
+   - Indented comment rows (↳ replies shown with lighter font)
+   - Embedded images directly in cells
+   - One sheet, all data together
+
+### Quick start
+
+```bash
+# Search and crawl 5 notes
+bh <<'PY'
+search_xhs("ai产品经理焦虑", limit=5)
+PY
+
+# Export to Excel
+bh <<'PY'
+export_to_excel("xhs_ai_pm.xlsx")
+PY
+```
+
+### Output structure
+
+```
+Excel 单 Sheet 结构：
+┌──────────┬──────────┬────────┬──────────┬──────────┐
+│ 标题      │ 正文      │ 点赞数  │ 帖子图片   │ 作者      │
+│ AI产品经理…│ AI产品…  │ 1234   │ [嵌入图]  │ 用户A    │ ← 帖子行（蓝底）
+│  ↳ 回复    │ 好文！   │ 56     │          │ 用户B    │ ← 评论行（同蓝底）
+│  ↳ 回复    │ 同感     │ 12     │ [嵌入图]  │ 用户C    │ ← 带图评论
+├──────────┼──────────┼────────┼──────────┼──────────┤
+│ 下一篇帖子…│ ...      │ ...    │ [嵌入图]  │ 用户D    │ ← 绿底
+│ ...       │ ...      │ ...    │          │          │
+└──────────┴──────────┴────────┴──────────┴──────────┘
+```
+
+### Key features
+
+- **Waterfall layout sorting** — 5-column masonry grid, reads cards in visual order
+- **Comment expansion** — auto-expands "展开 N 条回复" and AI Q&A summaries
+- **Image embedding** — post images and comment images embedded directly in Excel cells
+- **Anti-scrape speed control** — randomized delays between actions to avoid bans
+- **Stall detection** — stops scrolling when no new comments load (THE END)
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `SKILL.md` | Skill entry point — instructions for Claude Code |
+| `scripts/xhs_crawl.py` | Single note crawl (pipe to browser-harness) |
+| `scripts/xhs_export.py` | Excel export with image embedding |
+| `references/selectors.md` | DOM selector reference for all XHS elements |
+| `references/waterfall-layout.md` | 5-column masonry sorting algorithm |
+| `references/gotchas.md` | Known issues and workarounds |
+
+### Requirements
+
+- Claude Code
+- browser-harness installed and connected to your browser
+- Xiaohongshu logged in (cookies must be active)
+- Python 3 with `openpyxl` (`pip install openpyxl`)
+
 ---
 
 [The Bitter Lesson of Agent Harnesses](https://browser-use.com/posts/bitter-lesson-agent-harnesses) · [Web Agents That Actually Learn](https://browser-use.com/posts/web-agents-that-actually-learn)
