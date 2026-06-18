@@ -35,6 +35,16 @@ URL: https://www.xiaohongshu.com/search_result?keyword={编码关键词}&source=
 
 **排序**：5 列瀑布流，按 y 分组（差距 <100px = 同排），每排内按 x 升序。详见 [waterfall-layout.md](references/waterfall-layout.md)。
 
+### Step 2.5: 创建本次爬取目录
+
+每次爬取用独立子目录，防止旧数据混入：
+
+```bash
+mkdir -p xhs_data/{关键词简写}
+```
+
+所有 JSON 保存到这个子目录。导出 Excel 时也指定这个目录。
+
 ### Step 3: 一趟跑完（关键！）
 
 **必须在一个 browser-harness 会话中完成所有笔记的爬取。**
