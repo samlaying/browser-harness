@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""小红书单篇笔记爬取 — browser-harness (CDP)
+"""小红书单篇笔记提取 — browser-harness (CDP)
 
 用法（pipe 给 browser-harness）：
     browser-harness < scripts/xhs_crawl.py
 
 环境变量：
     XHS_NOTE_ID    - 笔记 ID（8位hex）
-    XHS_SEARCH_URL - 搜索页 URL
+
+前提：浏览器已在搜索页，且笔记浮窗已打开。
+本脚本只做提取，不负责导航和点击。
 
 输出：JSON 到 stdout
 """
@@ -39,11 +41,74 @@ def safe_cdp(method, **kw):
 def jitter(lo, hi):
     return random.uniform(lo, hi)
 
-def hover_click(cx, cy):
+# ── 点击验证 ──────────────────────────────────────────────
+
+# 这些元素不应该被点击
+BAD_ELEMENTS = ['发布', '下载APP', '登录', '注册']
+
+def verify_click_target(cx, cy):
+    """检查坐标处的元素，返回 (ok, info)
+    ok=True 表示可以点击，ok=False 表示应该跳过"""
+    info = safe_js(r'''
+var el = document.elementFromPoint(%d, %d);
+if (!el) return {ok:false, reason:'no_element'};
+var tag = el.tagName;
+var cls = el.className || '';
+var text = (el.textContent || '').substring(0, 50).trim();
+// 向上找最近的有意义的祖先
+var chain = [];
+var p = el;
+for (var i = 0; i < 6 && p; i++) {
+    var c = p.className || '';
+    var t = (p.textContent || '').substring(0, 30).trim();
+    chain.push(p.tagName + (c ? '.' + c.split(' ')[0] : '') + (t ? ' "' + t.substring(0,20) + '"' : ''));
+    p = p.parentElement;
+}
+// 检查是否是卡片
+var isCard = false;
+p = el;
+for (var i = 0; i < 8 && p; i++) {
+    if (p.classList && p.classList.contains('note-item')) { isCard = true; break; }
+    p = p.parentElement;
+}
+// 检查是否是坏元素
+var bad = false;
+var badReason = '';
+var badList = %s;
+for (var i = 0; i < badList.length; i++) {
+    if (text.indexOf(badList[i]) >= 0) { bad = true; badReason = badList[i]; break; }
+    if (cls.indexOf('channel') >= 0 && text.indexOf('发布') >= 0) { bad = true; badReason = 'channel-发布'; break; }
+}
+return {ok: !bad && isCard, bad: bad, badReason: badReason, isCard: isCard, tag: tag, cls: cls.substring(0,80), text: text.substring(0,40), chain: chain};
+''' % (cx, cy, json.dumps(BAD_ELEMENTS)))
+    return info
+
+def click_card_with_verify(cx, cy):
+    """点击卡片，带验证。返回 (clicked, element_info)"""
+    info = verify_click_target(cx, cy)
+    if not info:
+        return False, {"error": "verify_failed"}
+
+    if info.get('bad'):
+        print(f"  ⚠ 跳过: 坐标({cx},{cy}) → {info.get('badReason')} | {info.get('text','')}", flush=True)
+        return False, info
+
+    if not info.get('isCard'):
+        print(f"  ⚠ 非卡片: ({cx},{cy}) → {info.get('tag','')} {info.get('cls','')} \"{info.get('text','')}\"", flush=True)
+        # 打印 chain 方便调试
+        chain = info.get('chain', [])
+        if chain:
+            print(f"    chain: {' → '.join(chain[:4])}", flush=True)
+        return False, info
+
+    # 验证通过，执行点击
     safe_cdp("Input.dispatchMouseEvent", type="mouseMoved", x=cx, y=cy)
     time.sleep(jitter(0.3, 0.5))
     safe_cdp("Input.dispatchMouseEvent", type="mousePressed", x=cx, y=cy, button="left", clickCount=1)
     safe_cdp("Input.dispatchMouseEvent", type="mouseReleased", x=cx, y=cy, button="left", clickCount=1)
+
+    print(f"  ✓ 点击: ({cx},{cy}) → {info.get('tag','')} {info.get('cls','')} \"{info.get('text','')}\"", flush=True)
+    return True, info
 
 def wait_mask_gone(timeout=5):
     """关闭浮窗后轮询验证 mask 消失"""
@@ -54,18 +119,7 @@ def wait_mask_gone(timeout=5):
         time.sleep(0.3)
     return False
 
-def close_overlay():
-    hover_click(50, 400)
-    time.sleep(jitter(0.5, 1.0))
-    wait_mask_gone()
-
 # ── 速度控制 ──────────────────────────────────────────────
-
-def delay_between_notes():
-    d = jitter(3, 8)
-    if random.random() < 0.15:
-        d += jitter(5, 10)
-    return d
 
 def delay_after_open():
     return jitter(2, 4)
@@ -81,56 +135,7 @@ def delay_expand():
 ensure_daemon()
 ensure_real_tab()
 
-NOTE_ID = os.environ.get("XHS_NOTE_ID", "")
-SEARCH_URL = os.environ.get("XHS_SEARCH_URL", "")
-
-# 1) 回到搜索页
-if SEARCH_URL:
-    safe_js('window.location.href=%s;return 1;' % json.dumps(SEARCH_URL))
-    for _ in range(20):
-        try: wait_for_load()
-        except: pass
-        c = safe_js('return document.querySelectorAll("a[href*=\\"/explore/\\"]").length;')
-        if (c or 0) > 0: break
-        time.sleep(0.6)
-    time.sleep(1)
-
-    # 关闭可能打开的浮窗
-    d = safe_js('return document.querySelector(".note-detail-mask") ? getComputedStyle(document.querySelector(".note-detail-mask")).display : "none";')
-    if d and d != 'none':
-        close_overlay()
-
-    # 确保卡片在视口内：回到顶部
-    safe_js('window.scrollTo(0, 0); return 1;')
-    time.sleep(0.5)
-
-    # 点击目标卡片
-    rect = safe_js(r'''
-var a = document.querySelector('a[href*="/explore/''' + NOTE_ID + r'''"]');
-if (!a) return null;
-var card = a;
-for (var i = 0; i < 8; i++) {
-    if (card.parentElement) card = card.parentElement;
-    if (card.classList && card.classList.contains('note-item')) break;
-}
-if (!card.classList || !card.classList.contains('note-item')) return null;
-var rr = card.getBoundingClientRect();
-return {x: Math.round(rr.x + rr.width/2), y: Math.round(rr.y + rr.height/2)};
-''')
-    if not rect:
-        print(json.dumps({"error": "card not found", "note_id": NOTE_ID}))
-        exit(1)
-
-    hover_click(rect['x'], rect['y'])
-    time.sleep(delay_after_open())
-
-    # 等评论区出现
-    for _ in range(15):
-        c = safe_js('return document.querySelectorAll(".comment-item").length;')
-        if (c or 0) > 0: break
-        time.sleep(0.7)
-
-# 2) 一趟提取：元信息 + 帖子图片
+# 一趟提取：元信息 + 帖子图片
 meta = safe_js(r'''
 var title = (document.querySelector("#detail-title")||{}).textContent || document.title || "";
 var descEl = document.querySelector("#detail-desc,.desc");
@@ -160,7 +165,7 @@ if (startIdx > 0) {
 return {title:title, desc:desc, barText:barText, hasVideo:hasVideo, noteImgs:noteImgs};
 ''') or {}
 
-# 3) 滚动加载评论
+# 滚动加载评论
 last = 0; stall = 0
 for rnd in range(60):
     safe_js('var s=document.querySelector(".note-scroller");if(s){s.scrollTop=s.scrollHeight;}return 1;')
@@ -170,7 +175,7 @@ for rnd in range(60):
     else: stall = 0; last = c
     if stall >= 5: break
 
-# 4) 展开引擎（.show-more + .expand-btn）
+# 展开引擎（.show-more + .expand-btn）
 for i in range(80):
     btn = safe_js(r'''
 var best = null, bestY = Infinity;
@@ -195,12 +200,16 @@ for (var i = 0; i < all2.length; i++) {
 return best;
 ''')
     if not btn: break
-    hover_click(btn['x'], btn['y'])
+    # 展开按钮也需要 hover
+    safe_cdp("Input.dispatchMouseEvent", type="mouseMoved", x=btn['x'], y=btn['y'])
+    time.sleep(jitter(0.3, 0.5))
+    safe_cdp("Input.dispatchMouseEvent", type="mousePressed", x=btn['x'], y=btn['y'], button="left", clickCount=1)
+    safe_cdp("Input.dispatchMouseEvent", type="mouseReleased", x=btn['x'], y=btn['y'], button="left", clickCount=1)
     time.sleep(delay_expand())
 
 total = safe_js('return document.querySelectorAll(".comment-item").length;') or 0
 
-# 5) 提取评论（含问一问）
+# 提取评论（含问一问）
 data = safe_js(r'''
 var out = [];
 document.querySelectorAll(".comment-item").forEach(function(it) {
@@ -233,7 +242,7 @@ document.querySelectorAll(".comment-item").forEach(function(it) {
 return out;
 ''') or []
 
-# 6) 构建线程关系
+# 构建线程关系
 thread_id = 0; current_thread = 0
 for item in data:
     if item['lvl'] == 1:
@@ -248,7 +257,7 @@ for i, item in enumerate(data):
                 item['reply_to'] = data[j]['nick']
                 break
 
-# 7) 输出
+# 输出
 result = {
     'meta': meta,
     'comments': data,

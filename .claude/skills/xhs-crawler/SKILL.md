@@ -19,9 +19,7 @@ compatibility: browser-harness, openpyxl
 3. 小红书已登录
 4. openpyxl 已安装（`pip install openpyxl`）
 
-## 批量爬取流程（10 步）
-
-执行入口：`scripts/xhs_crawl.py`（单篇）+ `scripts/xhs_export.py`（导出）。
+## 批量爬取流程
 
 ### Step 1: 打开搜索页
 
@@ -37,24 +35,60 @@ URL: https://www.xiaohongshu.com/search_result?keyword={编码关键词}&source=
 
 **排序**：5 列瀑布流，按 y 分组（差距 <100px = 同排），每排内按 x 升序。详见 [waterfall-layout.md](references/waterfall-layout.md)。
 
-### Step 3: 逐篇爬取（一趟跑完）
+### Step 3: 一趟跑完（关键！）
 
-每篇笔记一次独立的 `browser-harness` 调用。流程：
+**必须在一个 browser-harness 会话中完成所有笔记的爬取。**
 
+原因：小红书是 SPA，重新导航到搜索页会导致卡片不渲染（`window.location.href` 赋值不触发 Vue Router 路由）。
+
+流程（伪代码）：
+```python
+for note_id in sorted_ids:
+    # 1) 关闭上一篇的浮窗（第一篇跳过）
+    if first:
+        first = False
+    else:
+        close_overlay()  # hover_click(50, 400) → wait_mask_gone()
+
+    # 2) 找到卡片坐标
+    rect = get_card_rect(note_id)  # JS: elementFromPoint 找 .note-item
+
+    # 3) 点击前验证（防误触"发布"按钮）
+    clicked, info = click_card_with_verify(rect['x'], rect['y'])
+    if not clicked:
+        print(f"  ✗ 跳过 {note_id}: {info}")
+        continue
+
+    # 4) 等评论出现
+    wait_for_comments()
+
+    # 5) 提取数据（内联或 import xhs_crawl）
+    data = extract_note()
+
+    # 6) 保存 JSON
+    save_json(note_id, data)
 ```
-关闭浮窗 → 验证 mask=none → 确保卡片在视口 → hover+click → 等评论出现
-→ 提取元信息（标题/描述/互动/类型）+ 提取帖子图片
-→ 滚动加载评论（stall 判定） → 展开引擎（.show-more + .expand-btn）
-→ 提取全部评论 → 下载图片 → 保存 JSON
-```
-
-**一趟跑完**：打开笔记后一次性提取所有数据，不分开两趟。
 
 ### Step 4: 导出 Excel
 
 执行 `scripts/xhs_export.py`，读取所有 JSON → 合并 → 下载图片 → 生成 Excel。
 
-**Excel 结构**：单 Sheet，帖子标题行（彩色底色 + 帖子图片）→ 评论行缩进，同帖同色。
+## 点击验证（重要！）
+
+点击卡片前必须用 `elementFromPoint(x, y)` 检查目标元素：
+
+| 检查项 | 说明 |
+|--------|------|
+| `isCard` | 向上找 `.note-item` 祖先，必须存在 |
+| `bad` | 文本包含"发布"、"下载APP"、"登录"、"注册" |
+| `chain` | 打印元素链，方便调试点击偏移问题 |
+
+如果验证失败：
+- 打印 `⚠ 跳过: 坐标(x,y) → 原因`
+- 不执行点击
+- 继续下一篇
+
+Retina 屏（devicePixelRatio=2）可能导致坐标偏移。优先用 `elementFromPoint` 验证而非盲目点击。
 
 ## 反爬要点
 
@@ -65,6 +99,7 @@ URL: https://www.xiaohongshu.com/search_result?keyword={编码关键词}&source=
 | **hover + click** | 展开按钮 hover-gated，必须 mouseMoved |
 | **关闭后验证** | mask != 'none' 时不能点下一篇 |
 | **速度随机** | 笔记间 3~8s + 15% 概率长停顿 |
+| **不重新导航** | SPA 不会重新渲染卡片，必须留在搜索页操作 |
 
 ## 速度控制（防封）
 
@@ -102,6 +137,7 @@ URL: https://www.xiaohongshu.com/search_result?keyword={编码关键词}&source=
 - **视频**：blob URL，无法下载 mp4
 - **评论图片**：表情包（`note-content-emoji`）忽略，只提取内容图
 - **问一问**：AI 摘要，长度有限（~140字）
+- **CDP 长时间运行**：10+ 分钟可能断连，每 5 篇检查一次连接
 
 ## 参考
 

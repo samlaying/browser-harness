@@ -176,11 +176,44 @@ if (!card.classList || !card.classList.contains('note-item')) return null;
 
 **解决**：5 个控制点随机延迟（详见 SKILL.md 速度控制表）。笔记间 3~8s + 15% 概率额外等待 5~10s。
 
-## 16. browser-harness 长会话掉线
+## 16. SPA 重新导航导致卡片不渲染
+
+**问题**：小红书是 Vue SPA，用 `window.location.href = SEARCH_URL` 回到搜索页后，卡片列表不会重新渲染，找不到笔记卡片。
+
+**表现**：`document.querySelector('a[href*="/explore/"]')` 返回 null，脚本报 "card not found"。
+
+**原因**：`window.location.href` 赋值只是修改 URL，不触发 Vue Router 的路由跳转，页面 DOM 不更新。
+
+**解决**：批量爬取时必须在一个 browser-harness 会话中完成，留在搜索页上操作，不重新导航。关闭浮窗后直接点击下一篇。
+
+## 17. 点击前必须验证目标元素
+
+**问题**：Retina 屏（devicePixelRatio=2）下 CDP 坐标可能偏移，点击卡片实际落在侧边栏"发布"按钮上，跳转到创作者页面。
+
+**表现**：点击后 URL 变成 `creator.xiaohongshu.com/login`，而非打开笔记浮窗。
+
+**解决**：点击前用 `elementFromPoint(x, y)` 验证：
+
+```javascript
+var el = document.elementFromPoint(x, y);
+// 检查是否是 .note-item 的子元素
+var p = el;
+for (var i = 0; i < 8 && p; i++) {
+    if (p.classList && p.classList.contains('note-item')) break;
+    p = p.parentElement;
+}
+if (!p || !p.classList.contains('note-item')) {
+    // 不是卡片，跳过或调整坐标
+}
+// 检查是否是坏元素（发布、下载APP等）
+if (el.textContent.indexOf('发布') >= 0) { /* 跳过 */ }
+```
+
+## 18. browser-harness 长会话掉线
 
 **问题**：单次 browser-harness 调用超过 ~2 分钟可能 CDP 断连。
 
-**解决**：每篇笔记一次独立调用，用 `safe_js`/`safe_cdp` 包装，异常时 `ensure_daemon(); ensure_real_tab()` 重连。
+**解决**：用 `safe_js`/`safe_cdp` 包装，异常时 `ensure_daemon(); ensure_real_tab()` 重连。批量爬取时每 5 篇检查一次连接。
 
 ```python
 def safe_js(s):
