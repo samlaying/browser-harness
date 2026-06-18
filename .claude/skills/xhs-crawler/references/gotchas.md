@@ -127,7 +127,56 @@ img.anchor = OneCellAnchor(
 
 **解决**：靠**连续 5 轮评论数不变**（stall）判定到底。效果等价。
 
-## 11. browser-harness 长会话掉线
+## 11. 浮窗未关闭就点下一篇 → 重复爬取
+
+**问题**：关闭浮窗后没验证 mask 消失就点击下一篇，实际浮窗还在，点到了同一篇笔记。
+
+**解决**：关闭浮窗后轮询验证 `mask.display === 'none'`：
+
+```python
+def wait_mask_gone(timeout=5):
+    for _ in range(int(timeout / 0.3)):
+        d = js('return document.querySelector(".note-detail-mask") ? getComputedStyle(document.querySelector(".note-detail-mask")).display : "none";')
+        if d == 'none': return True
+        sleep(0.3)
+    return False
+```
+
+## 12. 搜索页被当成笔记卡片
+
+**问题**：搜索页的某些元素也包含 `/explore/` 链接，被误识别为笔记卡片，导致点开的是搜索页本身。
+
+**解决**：卡片必须是 `.note-item` 的子元素：
+
+```javascript
+var card = a;
+for (var i = 0; i < 8; i++) {
+    if (card.parentElement) card = card.parentElement;
+    if (card.classList && card.classList.contains('note-item')) break;
+}
+// 必须验证最终找到的是 .note-item
+if (!card.classList || !card.classList.contains('note-item')) return null;
+```
+
+## 13. 两趟跑效率低且容易出错
+
+**问题**：先提取 20 篇的标题/描述，再逐篇回去取评论。两次打开同一篇笔记，浪费时间且丢失状态。
+
+**解决**：一趟跑完。点击打开笔记后一次性提取：标题 + 描述 + 互动数据 + 帖子图片 + 评论滚动 + 展开 + 评论提取。
+
+## 14. 卡片滚出视口点不到
+
+**问题**：滚动加载更多卡片后，前面的卡片 y 坐标为负数（在视口上方），点击失败。
+
+**解决**：点击前 `window.scrollTo(0, 0)` 回到顶部，确保卡片在视口内，然后重新 `getBoundingClientRect` 取坐标。
+
+## 15. 批量爬取速度过快被封
+
+**问题**：连续快速点击笔记，触发反爬检测。
+
+**解决**：5 个控制点随机延迟（详见 SKILL.md 速度控制表）。笔记间 3~8s + 15% 概率额外等待 5~10s。
+
+## 16. browser-harness 长会话掉线
 
 **问题**：单次 browser-harness 调用超过 ~2 分钟可能 CDP 断连。
 
