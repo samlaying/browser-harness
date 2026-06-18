@@ -40,7 +40,7 @@ URL: https://www.xiaohongshu.com/search_result?keyword={编码关键词}&source=
 每次爬取用独立子目录，防止旧数据混入：
 
 ```bash
-mkdir -p xhs_data/{关键词简写}
+mkdir -p xhs_data/$(date +%Y%m%d)_{关键词简写}
 ```
 
 所有 JSON 保存到这个子目录。导出 Excel 时也指定这个目录。
