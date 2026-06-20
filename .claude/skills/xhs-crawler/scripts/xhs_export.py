@@ -53,16 +53,20 @@ def download_image(url, fpath):
 # ── 主逻辑 ────────────────────────────────────────────────
 
 def load_notes(path):
-    """加载 JSON 文件或目录下所有 JSON"""
+    """加载 JSON 文件或目录下所有 JSON（只收笔记字典，跳过 notes_order.json 等非笔记文件）"""
     if os.path.isfile(path):
         with open(path, encoding='utf-8') as f:
             return [json.load(f)]
     files = sorted(glob.glob(os.path.join(path, '*.json')))
     notes = []
     for fp in files:
+        if os.path.basename(fp) == 'notes_order.json':
+            continue
         try:
             with open(fp, encoding='utf-8') as f:
-                notes.append(json.load(f))
+                d = json.load(f)
+            if isinstance(d, dict):
+                notes.append(d)
         except: pass
     return notes
 

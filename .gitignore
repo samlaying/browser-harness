@@ -5,4 +5,13 @@ __pycache__/
 uv.lock
 *.egg-info/
 .idea/
-.claude/
+.DS_Store
+
+# Data directories (too large for git)
+xhs_data/
+xhs_images/
+xhs_media_data/
+xai_data/
+xhs_*.xlsx
+xhs_data_*/
+guide.md
