@@ -407,10 +407,122 @@ return out;
     return True, {'note_id': note_id, 'meta': meta, 'comments': comments, 'total_comments': total}
 
 
+def health_check(note_count):
+    """每 N 篇心跳：document.title 异常则重连。真正的单调用恢复由 safe_js 兜底。"""
+    title = safe_js('return document.title;')
+    if title is None:
+        print("  [health] #%d 连接异常，重连..." % note_count, flush=True)
+        try:
+            ensure_daemon(); ensure_real_tab()
+        except Exception as e:
+            print("  [health] 重连失败: %s" % e, flush=True)
+
+
 def run_batch():
-    """主编排：导航搜索页 → 收卡片排序 → 断点续爬 → 逐篇重试增量落盘 → 健康检查。
-    见 Task 9。"""
-    print("[xhs_batch] run_batch() 尚未实现（骨架）", flush=True)
+    keyword = os.environ.get('XHS_KEYWORD', '').strip()
+    if not keyword:
+        print("ERROR: 必须设置 XHS_KEYWORD"); return
+    target = int(os.environ.get('XHS_TARGET', '20'))
+    max_retry = int(os.environ.get('XHS_MAX_RETRY', '2'))
+    outdir = os.environ.get('XHS_OUTDIR') or os.path.join(
+        'xhs_data', datetime.datetime.now().strftime('%Y%m%d') + '_' + keyword[:10])
+    total_attempts = max_retry + 1
+
+    ensure_daemon(); ensure_real_tab()
+
+    # 1) 会话首次导航到搜索页（不触发 gotcha #16）
+    url = ('https://www.xiaohongshu.com/search_result?keyword='
+           + encode_keyword(keyword) + '&source=web_explore_feed')
+    new_tab(url)
+    wait_for_load()
+    # 2) 滚动加载更多卡片
+    for _ in range(6):
+        safe_js('window.scrollBy(0, 1200);')
+        time.sleep(0.8)
+    # 3) 收集 + 瀑布流排序
+    cards = collect_cards()
+    order = waterfall_sort(cards)
+    # 回顶，确保点击时卡片在视口（gotcha #14）
+    safe_js('window.scrollTo(0, 0);')
+    time.sleep(0.5)
+
+    # 4) 状态：加载 + 双保险 seed（state.json 的 done ∪ 磁盘已存 JSON）
+    state = load_state(outdir) or default_state(keyword, target)
+    state['order'] = order
+    done = set(state.get('done', [])) | seed_done_from_disk(outdir)
+    state['done'] = sorted(done)
+    save_state(outdir, state)
+
+    pending = [i for i in order if i not in done]
+    print("目标 %d 篇，实际收 %d 张卡片，已完成 %d，待爬 %d" % (
+        target, len(order), len(done), len(pending)), flush=True)
+
+    idx = 0
+    for note_id in order:
+        if note_id in done:
+            continue
+        if len(done) >= target:
+            break
+        idx += 1
+        print("\n[%d/%d] %s" % (len(done) + 1, target, note_id), flush=True)
+
+        success = False
+        last_reason = 'unknown'
+        for attempt in range(1, total_attempts + 1):
+            if attempt > 1:
+                close_overlay()
+                time.sleep(jitter(0.5, 1.0))
+            rect = get_card_rect(note_id)
+            if not rect:
+                last_reason = 'card_not_found'
+                print("  ✗ 找不到卡片，重试 %d/%d" % (attempt, total_attempts), flush=True)
+                continue
+            clicked, _ = click_card_with_verify(rect['x'], rect['y'])
+            if not clicked:
+                last_reason = 'click_verify_failed'
+                print("  ✗ 点击未通过验证，重试 %d/%d" % (attempt, total_attempts), flush=True)
+                time.sleep(jitter(0.5, 1.0))
+                continue
+            time.sleep(delay_after_open())
+            ok, data = extract_note(note_id)
+            if ok:
+                # 增量落盘：先写笔记 JSON，再更新 state（崩溃安全）
+                with open(os.path.join(outdir, note_id + '.json'), 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                done.add(note_id)
+                state['done'] = sorted(done)
+                save_state(outdir, state)
+                print("  ✓ ok (%d 评论, %d 图)" % (
+                    data['total_comments'], len(data['meta'].get('noteImgs', []))), flush=True)
+                success = True
+                break
+            else:
+                last_reason = data.get('reason', 'empty')
+                print("  ✗ 提取失败(%s)，重试 %d/%d" % (last_reason, attempt, total_attempts), flush=True)
+
+        if not success:
+            state['failed'].append({'id': note_id, 'reason': last_reason, 'attempts': total_attempts})
+            save_state(outdir, state)
+            print("  ✗✗ 放弃 %s → failed(%s)" % (note_id, last_reason), flush=True)
+            close_overlay()
+
+        # 每 5 篇健康检查
+        if idx % 5 == 0:
+            health_check(idx)
+
+        # 笔记间限速 + 15% 长停顿（防封，见 SKILL.md 速度控制）
+        time.sleep(jitter(3, 8))
+        if random.random() < 0.15:
+            time.sleep(jitter(5, 10))
+
+    # 收尾
+    state['done'] = sorted(done)
+    save_state(outdir, state)
+    failed = state.get('failed', [])
+    print("\n==== 完成 ====", flush=True)
+    print("已爬 %d 篇，失败 %d 篇 → %s" % (len(done), len(failed), outdir), flush=True)
+    if failed:
+        print("失败: " + ', '.join(f['id'] for f in failed), flush=True)
 
 
 # ── 入口 ─────────────────────────────────────────────────
