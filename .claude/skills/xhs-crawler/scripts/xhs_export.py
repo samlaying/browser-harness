@@ -90,7 +90,6 @@ def build_excel(notes, output_path, img_dir):
 
     # 列定义
     # A:序号 B:层级 C:昵称 D:评论内容 E:回复→ F:时间 G:IP H:赞 I:帖子图片
-    headers = ['序号', '层级', '昵称', '评论内容', '回复→', '时间', 'IP', '赞', '帖子图片']
     ws.column_dimensions['A'].width = 8
     ws.column_dimensions['B'].width = 6
     ws.column_dimensions['C'].width = 18
