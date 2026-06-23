@@ -54,3 +54,34 @@ def test_compute_threads_does_not_mutate_input():
 
 def test_compute_threads_empty():
     assert X.compute_threads([]) == []
+
+
+def test_state_default():
+    s = X.default_state('kw', 5)
+    assert s == {'keyword': 'kw', 'target': 5, 'done': [], 'failed': [], 'order': []}
+
+
+def test_state_roundtrip(tmp_path):
+    d = str(tmp_path)
+    assert X.load_state(d) is None                      # 不存在
+    X.save_state(d, X.default_state('kw', 5))
+    s = X.load_state(d)
+    assert s['keyword'] == 'kw' and s['target'] == 5
+    # 保存 done/failed 后能读回
+    s['done'] = ['abc12345']; s['failed'] = [{'id': 'fff', 'reason': 'empty_meta', 'attempts': 3}]
+    X.save_state(d, s)
+    s2 = X.load_state(d)
+    assert s2['done'] == ['abc12345'] and s2['failed'][0]['reason'] == 'empty_meta'
+
+
+def test_seed_done_from_disk_filters(tmp_path):
+    d = str(tmp_path)
+    X.save_state(d, X.default_state('kw', 5))           # state.json 不应被当成笔记
+    open(os.path.join(d, 'abcdef12.json'), 'w').write('{}')   # 合法 hex id
+    open(os.path.join(d, 'zzzzzzz.json'), 'w').write('{}')    # 非 hex → 排除
+    open(os.path.join(d, 'readme.txt'), 'w').write('x')       # 非 json → 排除
+    seeded = X.seed_done_from_disk(d)
+    assert 'abcdef12' in seeded
+    assert 'state.json' not in seeded
+    assert all(len(i) == 8 for i in seeded)             # 只收 8 位 hex
+    assert 'zzzzzzz' not in seeded

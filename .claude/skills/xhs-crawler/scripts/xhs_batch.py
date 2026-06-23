@@ -82,6 +82,51 @@ def compute_threads(comments):
     return out
 
 
+STATE_FILENAME = 'state.json'
+
+
+def _state_path(outdir):
+    return os.path.join(outdir, STATE_FILENAME)
+
+
+def default_state(keyword, target):
+    return {'keyword': keyword, 'target': target, 'done': [], 'failed': [], 'order': []}
+
+
+def load_state(outdir):
+    p = _state_path(outdir)
+    if not os.path.exists(p):
+        return None
+    try:
+        with open(p, encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def save_state(outdir, state):
+    os.makedirs(outdir, exist_ok=True)
+    with open(_state_path(outdir), 'w', encoding='utf-8') as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def seed_done_from_disk(outdir):
+    """扫描 outdir 下 {id}.json（排除 state.json 与非 8 位 hex id），返回已完成 id 集合。
+    启动时与 state.done 取并集 → 即便进程在'存 JSON 后写 state 前'崩了，重跑也不重爬。"""
+    done = set()
+    if not os.path.isdir(outdir):
+        return done
+    hexset = set('0123456789abcdefABCDEF')
+    for fp in glob.glob(os.path.join(outdir, '*.json')):
+        name = os.path.basename(fp)
+        if name == STATE_FILENAME:
+            continue
+        stem = os.path.splitext(name)[0]
+        if len(stem) == 8 and all(ch in hexset for ch in stem):
+            done.add(stem)
+    return done
+
+
 # ── DOM/编排函数占位（后续 Task 填充） ───────────────────
 # safe_js / safe_cdp / jitter / verify_click_target / click_card_with_verify
 # / wait_mask_gone / collect_cards / get_card_rect / close_overlay
