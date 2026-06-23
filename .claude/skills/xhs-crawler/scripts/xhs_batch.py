@@ -292,6 +292,121 @@ def close_overlay():
     time.sleep(jitter(0.5, 1.0))
 
 
+def wait_for_comments():
+    """滚动加载评论（stall≥5 判底）+ 展开 .show-more/.expand-btn（hover-gated）。见 gotcha #3/#10。"""
+    last = 0; stall = 0
+    for _ in range(60):
+        safe_js('var s=document.querySelector(".note-scroller");if(s){s.scrollTop=s.scrollHeight;}return 1;')
+        time.sleep(delay_scroll())
+        c = safe_js('return document.querySelectorAll(".comment-item").length;') or 0
+        if c == last:
+            stall += 1
+        else:
+            stall = 0; last = c
+        if stall >= 5:
+            break
+    for _ in range(80):
+        btn = safe_js(r'''
+var best = null, bestY = Infinity;
+var all1 = document.querySelectorAll('.show-more');
+for (var i = 0; i < all1.length; i++) {
+    var el = all1[i]; var t = el.textContent.trim();
+    if (!/展开/.test(t) && !/查看/.test(t)) continue;
+    el.scrollIntoView({block:"center"});
+    var r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+    if (r.y < bestY) { bestY = r.y; best = {t:t, x:Math.round(r.x+r.width/2), y:Math.round(r.y+r.height/2)}; }
+}
+var all2 = document.querySelectorAll('.expand-btn');
+for (var i = 0; i < all2.length; i++) {
+    var el = all2[i]; var t = el.textContent.trim();
+    if (t.indexOf('展开') < 0) continue;
+    el.scrollIntoView({block:"center"});
+    var r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+    if (r.y < bestY) { bestY = r.y; best = {t:t, x:Math.round(r.x+r.width/2), y:Math.round(r.y+r.height/2)}; }
+}
+return best;
+''')
+        if not btn:
+            break
+        safe_cdp("Input.dispatchMouseEvent", type="mouseMoved", x=btn['x'], y=btn['y'])
+        time.sleep(jitter(0.3, 0.5))
+        safe_cdp("Input.dispatchMouseEvent", type="mousePressed", x=btn['x'], y=btn['y'], button="left", clickCount=1)
+        safe_cdp("Input.dispatchMouseEvent", type="mouseReleased", x=btn['x'], y=btn['y'], button="left", clickCount=1)
+        time.sleep(delay_expand())
+
+
+def extract_note(note_id):
+    """提取当前已打开浮窗的笔记。返回 (ok, data)。
+    失败判定 = meta 为空（无标题），见 spec。返回 data 含 note_id/meta/comments/total_comments。"""
+    meta = safe_js(r'''
+var title = (document.querySelector("#detail-title")||{}).textContent || document.title || "";
+var descEl = document.querySelector("#detail-desc,.desc");
+var desc = descEl ? (descEl.innerText||"").replace(/\s+/g," ").trim() : "";
+var bar = document.querySelector('.engage-bar, [class*="engage"]');
+var barText = bar ? bar.innerText.replace(/\s+/g,' ').trim() : "";
+var hasVideo = !!document.querySelector('video');
+var slides = document.querySelectorAll('.swiper-slide');
+var noteImgs = []; var seen = {};
+slides.forEach(function(s) {
+    var img = s.querySelector('img');
+    if (!img) return; var src = img.src || '';
+    if (!src || seen[src]) return; seen[src] = true;
+    noteImgs.push(src);
+});
+var active = document.querySelector('.swiper-slide-active img');
+var activeSrc = active ? active.src : '';
+var startIdx = noteImgs.indexOf(activeSrc);
+if (startIdx > 0) {
+    var ordered = [];
+    for (var i = 0; i < noteImgs.length; i++) {
+        ordered.push(noteImgs[(startIdx + i) % noteImgs.length]);
+    }
+    noteImgs = ordered;
+}
+return {title:title, desc:desc, barText:barText, hasVideo:hasVideo, noteImgs:noteImgs};
+''') or {}
+    if not meta or not meta.get('title'):
+        return False, {'note_id': note_id, 'reason': 'empty_meta'}
+
+    wait_for_comments()
+    total = safe_js('return document.querySelectorAll(".comment-item").length;') or 0
+    comments = safe_js(r'''
+var out = [];
+document.querySelectorAll(".comment-item").forEach(function(it) {
+    try {
+        var p = it.parentElement, lvl = 1;
+        while (p) { if (p.classList && p.classList.contains("reply-container")) { lvl=2; break; } p=p.parentElement; }
+        var nick = (it.querySelector(".name")||{}).textContent||"";
+        nick = nick.replace(/\s+/g," ").trim();
+        var contentEl = it.querySelector(".note-text")
+            || it.querySelector(".ai-comment-text-container")
+            || it.querySelector(".text-content")
+            || it.querySelector(".desc");
+        var content = contentEl ? (contentEl.innerText||"").replace(/\s+/g," ").trim() : "";
+        var locEl = it.querySelector(".location");
+        var ip = locEl ? (locEl.textContent||"").replace(/\s+/g," ").trim() : "";
+        var dateEl = it.querySelector(".date");
+        var dateText = "";
+        if (dateEl) { var d=(dateEl.textContent||"").replace(/\s+/g," ").trim(); dateText=ip?d.replace(ip,"").trim():d; }
+        function cnt(s){var e=it.querySelector(s);if(!e)return"0";var t=(e.textContent||"").replace(/\s+/g,"").trim();return /^\d+$/.test(t)?t:"0";}
+        var likes=cnt(".interactions .like .count")||cnt(".like .count");
+        var replies=cnt(".interactions .reply .count")||cnt(".reply .count");
+        var imgs=[];
+        it.querySelectorAll("img").forEach(function(img){
+            var src=img.src||""; var cls=img.className||"";
+            if(src&&src.indexOf("avatar")<0&&cls.indexOf("emoji")<0) imgs.push(src);
+        });
+        if(nick||content) out.push({lvl:lvl,nick:nick,content:content,date:dateText,ip:ip,likes:likes,replies:replies,imgs:imgs});
+    } catch(e) {}
+});
+return out;
+''') or []
+    comments = compute_threads(comments)
+    return True, {'note_id': note_id, 'meta': meta, 'comments': comments, 'total_comments': total}
+
+
 def run_batch():
     """主编排：导航搜索页 → 收卡片排序 → 断点续爬 → 逐篇重试增量落盘 → 健康检查。
     见 Task 9。"""
