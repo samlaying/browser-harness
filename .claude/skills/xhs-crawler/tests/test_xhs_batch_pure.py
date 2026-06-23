@@ -77,11 +77,14 @@ def test_state_roundtrip(tmp_path):
 def test_seed_done_from_disk_filters(tmp_path):
     d = str(tmp_path)
     X.save_state(d, X.default_state('kw', 5))           # state.json 不应被当成笔记
-    open(os.path.join(d, 'abcdef12.json'), 'w').write('{}')   # 合法 hex id
-    open(os.path.join(d, 'zzzzzzz.json'), 'w').write('{}')    # 非 hex → 排除
-    open(os.path.join(d, 'readme.txt'), 'w').write('x')       # 非 json → 排除
+    open(os.path.join(d, 'abcdef12.json'), 'w').write('{}')              # 旧 8 位 hex
+    open(os.path.join(d, 'a1b2c3d4e5f60718293a4b5c.json'), 'w').write('{}')  # 新 24 位 hex
+    open(os.path.join(d, 'zzzzzzz.json'), 'w').write('{}')               # 非 hex → 排除
+    open(os.path.join(d, 'readme.txt'), 'w').write('x')                  # 非 json → 排除
     seeded = X.seed_done_from_disk(d)
-    assert 'abcdef12' in seeded
+    assert 'abcdef12' in seeded                              # 旧格式收
+    assert 'a1b2c3d4e5f60718293a4b5c' in seeded             # 新格式也收
     assert 'state.json' not in seeded
-    assert all(len(i) == 8 for i in seeded)             # 只收 8 位 hex
+    hexset = set('0123456789abcdefABCDEF')
+    assert all(all(ch in hexset for ch in i) for i in seeded)  # 只收 hex
     assert 'zzzzzzz' not in seeded

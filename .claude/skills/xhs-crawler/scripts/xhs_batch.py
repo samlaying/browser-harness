@@ -111,7 +111,8 @@ def save_state(outdir, state):
 
 
 def seed_done_from_disk(outdir):
-    """扫描 outdir 下 {id}.json（排除 state.json 与非 8 位 hex id），返回已完成 id 集合。
+    """扫描 outdir 下 {id}.json（排除 state.json 与非 hex id），返回已完成 id 集合。
+    接受 8 位（旧）或 24 位（新）hex id，长度 >=8 即可。
     启动时与 state.done 取并集 → 即便进程在'存 JSON 后写 state 前'崩了，重跑也不重爬。"""
     done = set()
     if not os.path.isdir(outdir):
@@ -122,7 +123,7 @@ def seed_done_from_disk(outdir):
         if name == STATE_FILENAME:
             continue
         stem = os.path.splitext(name)[0]
-        if len(stem) == 8 and all(ch in hexset for ch in stem):
+        if len(stem) >= 8 and all(ch in hexset for ch in stem):
             done.add(stem)
     return done
 
@@ -277,7 +278,9 @@ return {x: Math.round(rr.x + rr.width/2), y: Math.round(rr.y + rr.height/2)};
 
 
 def close_overlay():
-    """关浮窗：mask 区点击 → 等 mask 消失；失败兜底 Escape。见 gotcha #11。"""
+    """关浮窗：mask 区点击 → 等 mask 消失；失败兜底 Escape。见 gotcha #11。
+    (50,400) 是视口左上 mask 空白带（笔记浮窗居中、左侧为半透明遮罩）；
+    分辨率/布局变更需重校，点击本身无 mask 命中验证，靠 wait_mask_gone 兜底。"""
     safe_cdp("Input.dispatchMouseEvent", type="mouseMoved", x=50, y=400)
     time.sleep(jitter(0.2, 0.4))
     safe_cdp("Input.dispatchMouseEvent", type="mousePressed", x=50, y=400, button="left", clickCount=1)
