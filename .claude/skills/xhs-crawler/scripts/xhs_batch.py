@@ -25,8 +25,11 @@ import os, sys, json, time, random, glob, datetime
 import urllib.parse
 
 
-# ── 纯函数占位（后续 Task 填充） ─────────────────────────
-# encode_keyword / waterfall_sort / compute_threads / 状态 IO — 见 Task 2-5
+# ── 纯函数（无 js/cdp 依赖，可单测） ─────────────────────
+
+def encode_keyword(kw):
+    """URL 编码搜索词。"""
+    return urllib.parse.quote(kw, safe='')
 
 
 # ── DOM/编排函数占位（后续 Task 填充） ───────────────────
