@@ -235,6 +235,60 @@ def wait_mask_gone(timeout=5):
     return False
 
 
+def collect_cards():
+    """收集搜索页 .note-item 卡片 → [{id, x, y}]（中心坐标）。去重，仅 .note-item 内。
+    见 gotcha #12（搜索页元素误判）。"""
+    raw = safe_js(r'''
+var out = [];
+document.querySelectorAll('.note-item').forEach(function(item) {
+    var a = item.querySelector('a[href*="/explore/"]');
+    if (!a) return;
+    var m = /\/explore\/([a-z0-9]+)/i.exec(a.href);
+    if (!m) return;
+    var rr = item.getBoundingClientRect();
+    if (rr.width <= 0 || rr.height <= 0) return;
+    out.push({id: m[1], x: Math.round(rr.x + rr.width/2), y: Math.round(rr.y + rr.height/2)});
+});
+return out;
+''') or []
+    seen = set(); uniq = []
+    for c in raw:
+        if c['id'] in seen:
+            continue
+        seen.add(c['id']); uniq.append(c)
+    return uniq
+
+
+def get_card_rect(note_id):
+    """按 id 找卡片中心坐标。不 scrollIntoView（gotcha #2）。返回 {x,y} 或 None。"""
+    return safe_js(r'''
+var a = document.querySelector('a[href*="/explore/%s"]');
+if (!a) return null;
+var card = a;
+for (var i = 0; i < 8 && card; i++) {
+    if (card.classList && card.classList.contains('note-item')) break;
+    card = card.parentElement;
+}
+if (!card || !card.classList || !card.classList.contains('note-item')) return null;
+var rr = card.getBoundingClientRect();
+if (rr.width <= 0 || rr.height <= 0) return null;
+return {x: Math.round(rr.x + rr.width/2), y: Math.round(rr.y + rr.height/2)};
+''' % note_id)
+
+
+def close_overlay():
+    """关浮窗：mask 区点击 → 等 mask 消失；失败兜底 Escape。见 gotcha #11。"""
+    safe_cdp("Input.dispatchMouseEvent", type="mouseMoved", x=50, y=400)
+    time.sleep(jitter(0.2, 0.4))
+    safe_cdp("Input.dispatchMouseEvent", type="mousePressed", x=50, y=400, button="left", clickCount=1)
+    safe_cdp("Input.dispatchMouseEvent", type="mouseReleased", x=50, y=400, button="left", clickCount=1)
+    if not wait_mask_gone(timeout=3):
+        safe_cdp("Input.dispatchKeyEvent", type="rawKeyDown", windowsVirtualKeyCode=27, key="Escape")
+        safe_cdp("Input.dispatchKeyEvent", type="keyUp", windowsVirtualKeyCode=27, key="Escape")
+        wait_mask_gone(timeout=2)
+    time.sleep(jitter(0.5, 1.0))
+
+
 def run_batch():
     """主编排：导航搜索页 → 收卡片排序 → 断点续爬 → 逐篇重试增量落盘 → 健康检查。
     见 Task 9。"""
