@@ -5,13 +5,14 @@
 用法：
     python3 xhs_export.py <json_dir_or_file> [output.xlsx]
 
-输入：xhs_crawl.py 输出的 JSON 文件或包含多个 JSON 的目录
+输入：xhs_batch.py 输出的 JSON 文件或包含多个 JSON 的目录
 输出：单 Sheet Excel，帖子标题行（彩色）+ 评论行缩进，图片嵌入
 
 依赖：pip install openpyxl
 """
 
 import json, os, sys, datetime, glob, urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as XlImage
 from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
@@ -49,6 +50,18 @@ def download_image(url, fpath):
     except Exception as e:
         print(f"  下载失败: {e}")
         return False
+
+def download_all(urls, img_dir, prefix):
+    """并行下载去重图片到 img_dir。返回 {url: local_path}（所有 url，含已存在的）。"""
+    os.makedirs(img_dir, exist_ok=True)
+    url_map = {}
+    for idx, url in enumerate(dict.fromkeys(urls)):          # 去重保序
+        url_map[url] = os.path.join(img_dir, '%s_%d.jpg' % (prefix, idx))
+    def work(item):
+        download_image(item[0], item[1])
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        list(ex.map(work, url_map.items()))
+    return url_map
 
 # ── 主逻辑 ────────────────────────────────────────────────
 
@@ -89,7 +102,13 @@ def build_excel(notes, output_path, img_dir):
     ws.column_dimensions['I'].width = 18
 
     row = 1
-    all_dl_map = {}  # url -> local path
+    # 预下载所有图片（并行），嵌入阶段按 url 查本地路径
+    all_urls = []
+    for n in notes:
+        all_urls.extend(n.get('meta', {}).get('noteImgs', []))
+        for c in n.get('comments', []):
+            all_urls.extend(c.get('imgs', [])[:2])
+    all_dl_map = download_all(all_urls, img_dir, 'img')
     comment_seq = 0
 
     for note_idx, note in enumerate(notes):
@@ -121,9 +140,7 @@ def build_excel(notes, output_path, img_dir):
         post_img_row = row
         for img_idx, img_url in enumerate(noteImgs):
             img_row = post_img_row + img_idx
-            fpath = os.path.join(img_dir, f'post_{note_idx}_{img_idx}.jpg')
-            download_image(img_url, fpath)
-            all_dl_map[img_url] = fpath
+            fpath = all_dl_map.get(img_url, os.path.join(img_dir, 'post_%d_%d.jpg' % (note_idx, img_idx)))
 
             if img_idx > 0:
                 # 多图时每张占新行
@@ -153,19 +170,7 @@ def build_excel(notes, output_path, img_dir):
             ws.row_dimensions[row].height = 22
             row += 1
         else:
-            # 构建线程关系
-            thread_id = 0; current_thread = 0
-            for c in comments:
-                if c['lvl'] == 1:
-                    thread_id += 1; current_thread = thread_id
-                    c['thread_id'] = thread_id; c['reply_to'] = ''
-                else:
-                    c['thread_id'] = current_thread; c['reply_to'] = ''
-            for i, c in enumerate(comments):
-                if c['lvl'] == 2:
-                    for j in range(i-1, -1, -1):
-                        if comments[j]['nick'] != c['nick']:
-                            c['reply_to'] = comments[j]['nick']; break
+            # 线程关系已由 xhs_batch.compute_threads 写入 JSON，直接信任，不重算。
 
             for c in comments:
                 comment_seq += 1
@@ -193,8 +198,7 @@ def build_excel(notes, output_path, img_dir):
                 if cmt_imgs:
                     ws.row_dimensions[row].height = 60 * 0.75
                     for img_url in cmt_imgs[:2]:
-                        fpath = os.path.join(img_dir, f'cmt_{comment_seq}.jpg')
-                        download_image(img_url, fpath)
+                        fpath = all_dl_map.get(img_url, os.path.join(img_dir, 'cmt_%d.jpg' % comment_seq))
                         if os.path.exists(fpath) and os.path.getsize(fpath) > 0:
                             try:
                                 img = XlImage(fpath)
