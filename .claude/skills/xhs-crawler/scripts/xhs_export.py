@@ -174,7 +174,8 @@ def build_excel(notes, output_path, img_dir):
 
             for c in comments:
                 comment_seq += 1
-                lvl = '评论' if c['lvl'] == 1 else '↳回复'
+                c_lvl = c.get('lvl', 1)
+                lvl = '评论' if c_lvl == 1 else '↳回复'
                 ws.cell(row=row, column=1, value=comment_seq)
                 ws.cell(row=row, column=2, value=lvl)
                 ws.cell(row=row, column=3, value=c.get('nick', ''))
@@ -188,7 +189,7 @@ def build_excel(notes, output_path, img_dir):
                     cell = ws.cell(row=row, column=col)
                     cell.fill = fill
                     cell.border = THIN_BORDER
-                    if c['lvl'] == 2:
+                    if c_lvl == 2:
                         cell.font = Font(color="555555", size=10)
 
                 ws.row_dimensions[row].height = 22

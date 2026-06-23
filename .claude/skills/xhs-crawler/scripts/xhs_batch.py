@@ -59,7 +59,7 @@ def waterfall_sort(items):
 def compute_threads(comments):
     """给评论列表打 thread_id / reply_to。
     1级(lvl==1)= 新线程；2级(lvl==2, 祖先含 reply-container)= 归属当前线程。
-    reply_to = 向前找本线程内上一个不同昵称者。返回新列表（不修改入参）。
+    reply_to = 向前找上一个不同昵称者（跨线程回溯，匹配既有行为）。返回新列表（不修改入参）。
     消除 xhs_crawl.py / xhs_export.py 里重复的逻辑。"""
     out = [dict(c) for c in comments]
     thread_id = 0
