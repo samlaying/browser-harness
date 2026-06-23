@@ -446,6 +446,13 @@ def run_batch():
     safe_js('window.scrollTo(0, 0);')
     time.sleep(0.5)
 
+    if not order:
+        state = load_state(outdir) or default_state(keyword, target)
+        state['order'] = []
+        save_state(outdir, state)
+        print("ERROR: 未收集到任何卡片（可能未登录 / 被限流 / SPA 未渲染）。请检查浏览器与登录态后重试。", flush=True)
+        return
+
     # 4) 状态：加载 + 双保险 seed（state.json 的 done ∪ 磁盘已存 JSON）
     state = load_state(outdir) or default_state(keyword, target)
     state['order'] = order
@@ -497,10 +504,11 @@ def run_batch():
                 success = True
                 break
             else:
-                last_reason = data.get('reason', 'empty')
+                last_reason = data.get('reason', 'empty_meta')
                 print("  ✗ 提取失败(%s)，重试 %d/%d" % (last_reason, attempt, total_attempts), flush=True)
 
         if not success:
+            state['failed'] = [f for f in state['failed'] if f['id'] != note_id]
             state['failed'].append({'id': note_id, 'reason': last_reason, 'attempts': total_attempts})
             save_state(outdir, state)
             print("  ✗✗ 放弃 %s → failed(%s)" % (note_id, last_reason), flush=True)
