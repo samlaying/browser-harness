@@ -32,6 +32,30 @@ def encode_keyword(kw):
     return urllib.parse.quote(kw, safe='')
 
 
+def waterfall_sort(items):
+    """items: [{id, x, y}]。按瀑布流阅读顺序排序：y 差 <100 视为同排，
+    排内按 x 升序，逐排从左到右。返回 id 列表。算法见 references/waterfall-layout.md。"""
+    if not items:
+        return []
+    ordered = sorted(items, key=lambda it: (it['y'], it['x']))
+    rows, current, last_y = [], [], None
+    for it in ordered:
+        if current and last_y is not None and abs(it['y'] - last_y) > 100:
+            rows.append(current)
+            current = []
+        current.append(it)
+        last_y = it['y']
+    if current:
+        rows.append(current)
+    for row in rows:
+        row.sort(key=lambda it: it['x'])
+    flat = []
+    for row in rows:
+        for it in row:
+            flat.append(it['id'])
+    return flat
+
+
 # ── DOM/编排函数占位（后续 Task 填充） ───────────────────
 # safe_js / safe_cdp / jitter / verify_click_target / click_card_with_verify
 # / wait_mask_gone / collect_cards / get_card_rect / close_overlay
