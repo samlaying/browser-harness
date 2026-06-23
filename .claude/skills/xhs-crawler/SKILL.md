@@ -47,37 +47,31 @@ mkdir -p xhs_data/$(date +%Y%m%d)_{关键词简写}
 
 ### Step 3: 一趟跑完（关键！）
 
-**必须在一个 browser-harness 会话中完成所有笔记的爬取。**
+**直接运行自包含编排脚本 `scripts/xhs_batch.py`，不再手写循环。**
 
-原因：小红书是 SPA，重新导航到搜索页会导致卡片不渲染（`window.location.href` 赋值不触发 Vue Router 路由）。
-
-流程（伪代码）：
-```python
-for note_id in sorted_ids:
-    # 1) 关闭上一篇的浮窗（第一篇跳过）
-    if first:
-        first = False
-    else:
-        close_overlay()  # hover_click(50, 400) → wait_mask_gone()
-
-    # 2) 找到卡片坐标
-    rect = get_card_rect(note_id)  # JS: elementFromPoint 找 .note-item
-
-    # 3) 点击前验证（防误触"发布"按钮）
-    clicked, info = click_card_with_verify(rect['x'], rect['y'])
-    if not clicked:
-        print(f"  ✗ 跳过 {note_id}: {info}")
-        continue
-
-    # 4) 等评论出现
-    wait_for_comments()
-
-    # 5) 提取数据（内联或 import xhs_crawl）
-    data = extract_note()
-
-    # 6) 保存 JSON
-    save_json(note_id, data)
+```bash
+XHS_KEYWORD="咖啡" XHS_TARGET=20 \
+  browser-harness < .claude/skills/xhs-crawler/scripts/xhs_batch.py
 ```
+
+环境变量：
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `XHS_KEYWORD` | 必填 | 搜索词 |
+| `XHS_TARGET` | 20 | 目标篇数 |
+| `XHS_OUTDIR` | `xhs_data/{date}_{keyword}` | 输出子目录 |
+| `XHS_MAX_RETRY` | 2 | 单篇重试次数 |
+
+**为什么必须在一个 browser-harness 会话里跑**：小红书是 SPA，重新导航到搜索页会导致卡片不渲染（gotcha #16）。脚本在会话首次 `new_tab` 到搜索页后，全程留在该页操作（关浮窗 → 点下一篇），中途不重新导航。
+
+**脚本内置健壮性**（详见 scripts/xhs_batch.py 函数注释）：
+- **断点续爬**：每篇成功即写 `{id}.json` + 更新 `state.json`。重跑自动跳过已完成（state.json 的 done ∪ 磁盘已存 JSON 双保险）。
+- **单篇重试**：提取失败（无标题）→ 关浮窗重点同卡，最多 `XHS_MAX_RETRY` 次，仍失败记入 `state.json.failed`。
+- **增量落盘**：先写笔记 JSON 再写 state，崩溃不丢已爬。
+- **连接健康检查**：每 5 篇心跳，掉线由 `safe_js`/`safe_cdp` 自动重连。
+
+实现细节（函数级）见 `scripts/xhs_batch.py`；坑点见 `references/gotchas.md`。
 
 ### Step 4: 导出 Excel
 
