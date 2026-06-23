@@ -127,10 +127,112 @@ def seed_done_from_disk(outdir):
     return done
 
 
-# ── DOM/编排函数占位（后续 Task 填充） ───────────────────
-# safe_js / safe_cdp / jitter / verify_click_target / click_card_with_verify
-# / wait_mask_gone / collect_cards / get_card_rect / close_overlay
-# / delay_* / wait_for_comments / extract_note / health_check — 见 Task 6-9
+# ── DOM 工具函数（harness 内运行，引用 js/cdp 全局） ──────
+
+BAD_ELEMENTS = ['发布', '下载APP', '登录', '注册']
+
+
+def safe_js(s):
+    try:
+        return js(s)
+    except Exception:
+        ensure_daemon(); ensure_real_tab(); time.sleep(1.0)
+        try:
+            return js(s)
+        except Exception:
+            return None
+
+
+def safe_cdp(method, **kw):
+    try:
+        return cdp(method, **kw)
+    except Exception:
+        ensure_daemon(); ensure_real_tab(); time.sleep(1.0)
+        try:
+            return cdp(method, **kw)
+        except Exception:
+            return None
+
+
+def jitter(lo, hi):
+    return random.uniform(lo, hi)
+
+
+def delay_after_open():
+    return jitter(2, 4)
+
+
+def delay_scroll():
+    return jitter(1, 2)
+
+
+def delay_expand():
+    return jitter(1.5, 3)
+
+
+def verify_click_target(cx, cy):
+    """elementFromPoint 验证坐标处元素。ok=True 可点；isCard=是否 .note-item 后代；
+    bad=坏元素。见 gotcha #17。"""
+    return safe_js(r'''
+var el = document.elementFromPoint(%d, %d);
+if (!el) return {ok:false, reason:'no_element'};
+var tag = el.tagName;
+var cls = el.className || '';
+var text = (el.textContent || '').substring(0, 50).trim();
+var chain = [];
+var p = el;
+for (var i = 0; i < 6 && p; i++) {
+    var c = p.className || '';
+    var t = (p.textContent || '').substring(0, 30).trim();
+    chain.push(p.tagName + (c ? '.' + c.split(' ')[0] : '') + (t ? ' "' + t.substring(0,20) + '"' : ''));
+    p = p.parentElement;
+}
+var isCard = false;
+p = el;
+for (var i = 0; i < 8 && p; i++) {
+    if (p.classList && p.classList.contains('note-item')) { isCard = true; break; }
+    p = p.parentElement;
+}
+var bad = false, badReason = '';
+var badList = %s;
+for (var i = 0; i < badList.length; i++) {
+    if (text.indexOf(badList[i]) >= 0) { bad = true; badReason = badList[i]; break; }
+    if (cls.indexOf('channel') >= 0 && text.indexOf('发布') >= 0) { bad = true; badReason = 'channel-发布'; break; }
+}
+return {ok: !bad && isCard, bad: bad, badReason: badReason, isCard: isCard, tag: tag, cls: cls.substring(0,80), text: text.substring(0,40), chain: chain};
+''' % (cx, cy, json.dumps(BAD_ELEMENTS)))
+
+
+def click_card_with_verify(cx, cy):
+    """验证 + hover + 点击。返回 (clicked, info)。见 gotcha #3/#17。"""
+    info = verify_click_target(cx, cy)
+    if not info:
+        return False, {"error": "verify_failed"}
+    if info.get('bad'):
+        print("  ⚠ 跳过: 坐标(%d,%d) → %s | %s" % (cx, cy, info.get('badReason'), info.get('text', '')), flush=True)
+        return False, info
+    if not info.get('isCard'):
+        print("  ⚠ 非卡片: (%d,%d) → %s %s \"%s\"" % (cx, cy, info.get('tag', ''), info.get('cls', ''), info.get('text', '')), flush=True)
+        chain = info.get('chain', [])
+        if chain:
+            print("    chain: " + ' → '.join(chain[:4]), flush=True)
+        return False, info
+    safe_cdp("Input.dispatchMouseEvent", type="mouseMoved", x=cx, y=cy)
+    time.sleep(jitter(0.3, 0.5))
+    safe_cdp("Input.dispatchMouseEvent", type="mousePressed", x=cx, y=cy, button="left", clickCount=1)
+    safe_cdp("Input.dispatchMouseEvent", type="mouseReleased", x=cx, y=cy, button="left", clickCount=1)
+    print("  ✓ 点击: (%d,%d) → %s %s \"%s\"" % (cx, cy, info.get('tag', ''), info.get('cls', ''), info.get('text', '')), flush=True)
+    return True, info
+
+
+def wait_mask_gone(timeout=5):
+    """关闭浮窗后轮询 mask 消失。见 gotcha #11。"""
+    for _ in range(int(timeout / 0.3)):
+        d = safe_js('return document.querySelector(".note-detail-mask") ? getComputedStyle(document.querySelector(".note-detail-mask")).display : "none";')
+        if d == 'none':
+            return True
+        time.sleep(0.3)
+    return False
 
 
 def run_batch():
