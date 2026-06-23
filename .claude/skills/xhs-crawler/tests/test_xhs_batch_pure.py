@@ -30,3 +30,27 @@ def test_waterfall_sort_gap_splits_rows_and_x_within_row():
 
 def test_waterfall_sort_empty():
     assert X.waterfall_sort([]) == []
+
+
+def test_compute_threads_levels_and_reply_to():
+    comments = [
+        {'lvl': 1, 'nick': 'Alice', 'content': 'hi'},
+        {'lvl': 2, 'nick': 'Bob',   'content': 're'},      # 回复 Alice
+        {'lvl': 1, 'nick': 'Carol', 'content': 'yo'},
+        {'lvl': 2, 'nick': 'Dave',  'content': 're2'},     # 回复 Carol
+    ]
+    out = X.compute_threads(comments)
+    assert out[0]['thread_id'] == 1 and out[0]['reply_to'] == ''
+    assert out[1]['thread_id'] == 1 and out[1]['reply_to'] == 'Alice'
+    assert out[2]['thread_id'] == 2 and out[2]['reply_to'] == ''
+    assert out[3]['thread_id'] == 2 and out[3]['reply_to'] == 'Carol'
+
+
+def test_compute_threads_does_not_mutate_input():
+    comments = [{'lvl': 1, 'nick': 'A', 'content': 'x'}]
+    X.compute_threads(comments)
+    assert 'thread_id' not in comments[0]
+
+
+def test_compute_threads_empty():
+    assert X.compute_threads([]) == []

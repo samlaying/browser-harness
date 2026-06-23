@@ -56,6 +56,32 @@ def waterfall_sort(items):
     return flat
 
 
+def compute_threads(comments):
+    """给评论列表打 thread_id / reply_to。
+    1级(lvl==1)= 新线程；2级(lvl==2, 祖先含 reply-container)= 归属当前线程。
+    reply_to = 向前找本线程内上一个不同昵称者。返回新列表（不修改入参）。
+    消除 xhs_crawl.py / xhs_export.py 里重复的逻辑。"""
+    out = [dict(c) for c in comments]
+    thread_id = 0
+    current_thread = 0
+    for c in out:
+        if c.get('lvl') == 1:
+            thread_id += 1
+            current_thread = thread_id
+            c['thread_id'] = thread_id
+            c['reply_to'] = ''
+        else:
+            c['thread_id'] = current_thread
+            c['reply_to'] = ''
+    for i, c in enumerate(out):
+        if c.get('lvl') == 2:
+            for j in range(i - 1, -1, -1):
+                if out[j].get('nick') != c.get('nick'):
+                    c['reply_to'] = out[j].get('nick', '')
+                    break
+    return out
+
+
 # ── DOM/编排函数占位（后续 Task 填充） ───────────────────
 # safe_js / safe_cdp / jitter / verify_click_target / click_card_with_verify
 # / wait_mask_gone / collect_cards / get_card_rect / close_overlay
