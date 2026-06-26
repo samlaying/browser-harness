@@ -278,18 +278,17 @@ return {x: Math.round(rr.x + rr.width/2), y: Math.round(rr.y + rr.height/2)};
 
 
 def close_overlay():
-    """关浮窗：mask 区点击 → 等 mask 消失；失败兜底 Escape。见 gotcha #11。
-    (50,400) 是视口左上 mask 空白带（笔记浮窗居中、左侧为半透明遮罩）；
-    分辨率/布局变更需重校，点击本身无 mask 命中验证，靠 wait_mask_gone 兜底。"""
-    safe_cdp("Input.dispatchMouseEvent", type="mouseMoved", x=50, y=400)
-    time.sleep(jitter(0.2, 0.4))
-    safe_cdp("Input.dispatchMouseEvent", type="mousePressed", x=50, y=400, button="left", clickCount=1)
-    safe_cdp("Input.dispatchMouseEvent", type="mouseReleased", x=50, y=400, button="left", clickCount=1)
-    if not wait_mask_gone(timeout=3):
+    """关浮窗：Escape 关闭 preview-modal + note-detail-mask。
+    见 gotcha #11。仅在浮窗确实存在时才操作，避免误点页面上的其他链接。"""
+    for _ in range(5):
+        has_preview = safe_js('return !!document.querySelector(".preview-modal");')
+        has_mask = safe_js('var m=document.querySelector(".note-detail-mask"); return m && getComputedStyle(m).display !== "none";')
+        if not has_preview and not has_mask:
+            break
         safe_cdp("Input.dispatchKeyEvent", type="rawKeyDown", windowsVirtualKeyCode=27, key="Escape")
         safe_cdp("Input.dispatchKeyEvent", type="keyUp", windowsVirtualKeyCode=27, key="Escape")
-        wait_mask_gone(timeout=2)
-    time.sleep(jitter(0.5, 1.0))
+        time.sleep(jitter(0.5, 0.8))
+    time.sleep(jitter(0.3, 0.5))
 
 
 def wait_for_comments():
@@ -512,7 +511,10 @@ def run_batch():
             state['failed'].append({'id': note_id, 'reason': last_reason, 'attempts': total_attempts})
             save_state(outdir, state)
             print("  ✗✗ 放弃 %s → failed(%s)" % (note_id, last_reason), flush=True)
-            close_overlay()
+
+        # 关闭当前笔记浮窗（成功/失败均关）。成功路径之前不关 → 下一篇首点落在残留遮罩上，
+        # 白白浪费一次重试。close_overlay 仅在浮窗确实存在时才操作，无浮窗时安全空转。见 gotcha #11。
+        close_overlay()
 
         # 每 5 篇健康检查
         if idx % 5 == 0:
