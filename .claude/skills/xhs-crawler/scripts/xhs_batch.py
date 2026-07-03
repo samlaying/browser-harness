@@ -130,7 +130,10 @@ def seed_done_from_disk(outdir):
 
 # ── DOM 工具函数（harness 内运行，引用 js/cdp 全局） ──────
 
-BAD_ELEMENTS = ['发布', '下载APP', '登录', '注册']
+BAD_ELEMENTS = ['发布', '下载APP', '登录', '注册', '创作']
+
+# scroll_to_card 在卡片被虚拟滚动移除时，用它记录的绝对文档位置重渲染。
+CARD_Y_MAP = {}            # note_id → 收集时的绝对文档 y（viewport y + 当时 scrollY）
 
 
 def safe_js(s):
@@ -260,8 +263,90 @@ return out;
     return uniq
 
 
+def on_search_page():
+    """当前活动页是否仍是搜索页。浮窗打开时 URL 不变（仍在 /search_result）；
+    若某卡片点击触发了整页跳转，URL 会变为 /explore/{id} → 返回 False = 已漂移。"""
+    p = safe_js('return location.pathname;')
+    return bool(p) and '/search_result' in p
+
+
+def reanchor_search(url):
+    """导航漂移恢复：new_tab 重开一个全新搜索页并重建 CARD_Y_MAP。
+
+    根因：偶尔某张卡片的点击会让整个标签页跳转到 /explore/{id} 详情页（而非弹浮窗）。
+    一旦离开搜索页，document.querySelectorAll('.note-item') 返回空 → 后续所有卡片
+    都判 card_not_found，白白跑完整张重试表（gotcha：导航漂移）。
+
+    恢复：重开全新搜索标签页。新页面会正常渲染卡片（这正是「不能在原 tab 重新导航」
+    的 gotcha #16 的破解点——重新导航不渲染，但全新 new_tab 会渲染）。然后重新收集
+    所有已渲染卡片的位置写回 CARD_Y_MAP，使 scroll_to_card 能在新鲜页面上恢复虚拟滚动。
+    order 不变（同一搜索词结果一致）；旧详情页 tab 留在后台不碍事。"""
+    new_tab(url)
+    wait_for_load()
+    for _ in range(40):
+        if safe_js('return document.querySelectorAll(".note-item").length;'):
+            break
+        time.sleep(0.5)
+    global CARD_Y_MAP
+    CARD_Y_MAP = {}
+    safe_js('window.scrollTo(0,0);')
+    # 逐屏向下收集，刷新所有已渲染卡片的位置（绝对文档 y = viewport y + scrollY）
+    for _ in range(8):
+        sy = safe_js('return window.scrollY;') or 0
+        for c in collect_cards():
+            CARD_Y_MAP[c['id']] = c['y'] + sy
+        safe_js('window.scrollBy(0, 1000);')
+        time.sleep(0.8)
+    sy = safe_js('return window.scrollY;') or 0
+    for c in collect_cards():
+        CARD_Y_MAP[c['id']] = c['y'] + sy
+    safe_js('window.scrollTo(0,0);')
+
+
+def scroll_to_card(note_id):
+    """把指定卡片滚入视口中心，使 getBoundingClientRect / elementFromPoint 有效。
+    若卡片不在 DOM（虚拟滚动），先滚动到收集时的近似文档位置触发渲染，再找一次。"""
+    # 先尝试直接找
+    found = safe_js(r'''
+var a = document.querySelector('a[href*="/explore/%s"]');
+if (!a) return false;
+var card = a;
+for (var i = 0; i < 8 && card; i++) {
+    if (card.classList && card.classList.contains('note-item')) break;
+    card = card.parentElement;
+}
+if (!card) return false;
+var vpH = window.innerHeight || document.documentElement.clientHeight;
+var top = card.getBoundingClientRect().top + window.scrollY - vpH / 2;
+window.scrollTo(0, Math.max(0, top));
+return true;
+''' % note_id)
+    if found:
+        return
+    # 卡片不在 DOM → 滚动到收集时的绝对文档位置触发虚拟滚动重渲染
+    est_doc_y = CARD_Y_MAP.get(note_id)     # 已是绝对文档 y（见 run_batch 的 _merge_batch）
+    if est_doc_y is not None:
+        safe_js('window.scrollTo(0, Math.max(0, %d));' % int(est_doc_y - 600))
+        time.sleep(1.0)
+        # 再试一次
+        safe_js(r'''
+var a = document.querySelector('a[href*="/explore/%s"]');
+if (!a) return false;
+var card = a;
+for (var i = 0; i < 8 && card; i++) {
+    if (card.classList && card.classList.contains('note-item')) break;
+    card = card.parentElement;
+}
+if (!card) return false;
+var vpH = window.innerHeight || document.documentElement.clientHeight;
+var top = card.getBoundingClientRect().top + window.scrollY - vpH / 2;
+window.scrollTo(0, Math.max(0, top));
+return true;
+''' % note_id)
+
+
 def get_card_rect(note_id):
-    """按 id 找卡片中心坐标。不 scrollIntoView（gotcha #2）。返回 {x,y} 或 None。"""
+    """按 id 找卡片中心坐标。返回 {x,y} 或 None。调用前须先 scroll_to_card。"""
     return safe_js(r'''
 var a = document.querySelector('a[href*="/explore/%s"]');
 if (!a) return null;
@@ -434,16 +519,34 @@ def run_batch():
            + encode_keyword(keyword) + '&source=web_explore_feed')
     new_tab(url)
     wait_for_load()
-    # 2) 滚动加载更多卡片
-    for _ in range(6):
-        safe_js('window.scrollBy(0, 1200);')
+    # 2) 收集卡片：先在 scrollY=0 收（拿真正的顶部），不足目标再向下增量加载。
+    #    小红书是虚拟滚动——往下滚会把顶部卡片从 DOM 移除，故不能「先滚再收」（会漏掉顶部）。
+    for _ in range(40):                      # SPA 冷启动慢，轮询等顶部卡片渲染
+        if safe_js('return document.querySelectorAll(".note-item").length;'):
+            break
+        time.sleep(0.5)
+    global CARD_Y_MAP
+    CARD_Y_MAP = {}                          # id → 收集时的绝对文档 y（供 scroll_to_card 重渲染）
+    order = []                               # 去重保序；顶部批先入列 → 真正的顶部在前
+    seen = set()
+
+    def _merge_batch():
+        sy = safe_js('return window.scrollY;') or 0
+        batch = collect_cards()              # viewport-relative {id,x,y}
+        for c in batch:
+            CARD_Y_MAP[c['id']] = c['y'] + sy   # viewport y + 当前 scrollY = 绝对文档 y
+        for cid in waterfall_sort(batch):       # 本批内按瀑布流（行→列）排序
+            if cid not in seen:
+                seen.add(cid); order.append(cid)
+
+    safe_js('window.scrollTo(0,0);')
+    _merge_batch()                           # 真正的顶部一批
+    for _ in range(8):                       # 不足目标再向下增量加载；已收集的顶部被虚拟化移除也无妨，order 已记
+        if len(order) >= target:
+            break
+        safe_js('window.scrollBy(0, 1000);')
         time.sleep(0.8)
-    # 3) 收集 + 瀑布流排序
-    cards = collect_cards()
-    order = waterfall_sort(cards)
-    # 回顶，确保点击时卡片在视口（gotcha #14）
-    safe_js('window.scrollTo(0, 0);')
-    time.sleep(0.5)
+        _merge_batch()
 
     if not order:
         state = load_state(outdir) or default_state(keyword, target)
@@ -474,15 +577,29 @@ def run_batch():
 
         success = False
         last_reason = 'unknown'
+        reanchored = False
         for attempt in range(1, total_attempts + 1):
             if attempt > 1:
                 close_overlay()
                 time.sleep(jitter(0.5, 1.0))
+            scroll_to_card(note_id)
+            time.sleep(0.3)
             rect = get_card_rect(note_id)
             if not rect:
-                last_reason = 'card_not_found'
-                print("  ✗ 找不到卡片，重试 %d/%d" % (attempt, total_attempts), flush=True)
-                continue
+                # 漂移检测：上一篇点击若触发了整页跳转（非浮窗），此刻已不在搜索页 →
+                # 重开搜索页续爬。每篇最多重锚一次（reanchored 标志），避免无限重锚。
+                if not reanchored and not on_search_page():
+                    print("  ⚠ 导航漂移（已离开搜索页），重新锚定搜索页续爬...", flush=True)
+                    reanchor_search(url)
+                    reanchored = True
+                    time.sleep(1.0)
+                    scroll_to_card(note_id)
+                    time.sleep(0.3)
+                    rect = get_card_rect(note_id)
+                if not rect:
+                    last_reason = 'card_not_found'
+                    print("  ✗ 找不到卡片，重试 %d/%d" % (attempt, total_attempts), flush=True)
+                    continue
             clicked, _ = click_card_with_verify(rect['x'], rect['y'])
             if not clicked:
                 last_reason = 'click_verify_failed'

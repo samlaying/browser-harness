@@ -11,14 +11,24 @@
 依赖：pip install openpyxl
 """
 
-import json, os, sys, datetime, glob, urllib.request
+import json, os, sys, datetime, glob, urllib.request, re
 from concurrent.futures import ThreadPoolExecutor
+
+# openpyxl 拒绝 Excel 不支持的控制字符（XHS 富文本抓取时偶尔带进来），写入前清洗
+_ILLEGAL_CHARS_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
+def _clean(v):
+    """剥离 Excel 单元格不支持的非法控制字符，非字符串原样返回。"""
+    return _ILLEGAL_CHARS_RE.sub('', v) if isinstance(v, str) else v
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as XlImage
 from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
 from openpyxl.drawing.xdr import XDRPositiveSize2D
 from openpyxl.utils.units import pixels_to_EMU
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+
+# 评论图嵌入开关：设 XHS_NO_COMMENT_IMAGES=1 跳过评论图（仅保留帖子图），
+# 用于评论图极多（如单篇 850 条评论 × N 图）导致 Excel 体积爆炸时的精简导出。
+EMBED_COMMENT_IMAGES = os.environ.get('XHS_NO_COMMENT_IMAGES') != '1'
 
 # ── 颜色 ─────────────────────────────────────────────────
 
@@ -78,12 +88,23 @@ def load_notes(path):
         try:
             with open(fp, encoding='utf-8') as f:
                 d = json.load(f)
-            if isinstance(d, dict):
+            if isinstance(d, dict) and d.get('note_id'):
                 notes.append(d)
         except: pass
     return notes
 
 def build_excel(notes, output_path, img_dir):
+    # 清洗所有将写入单元格的用户文本字段（剥离非法控制字符）
+    for n in notes:
+        m = n.get('meta', {})
+        for k in ('title', 'desc', 'barText'):
+            if isinstance(m.get(k), str):
+                m[k] = _clean(m[k])
+        for c in n.get('comments', []):
+            for k in ('nick', 'content', 'reply_to', 'date', 'ip'):
+                if isinstance(c.get(k), str):
+                    c[k] = _clean(c[k])
+
     wb = Workbook()
     ws = wb.active
     ws.title = "小红书数据"
@@ -93,7 +114,7 @@ def build_excel(notes, output_path, img_dir):
     ws.column_dimensions['A'].width = 8
     ws.column_dimensions['B'].width = 6
     ws.column_dimensions['C'].width = 18
-    ws.column_dimensions['D'].width = 55
+    ws.column_dimensions['D'].width = 80
     ws.column_dimensions['E'].width = 12
     ws.column_dimensions['F'].width = 12
     ws.column_dimensions['G'].width = 8
@@ -106,7 +127,8 @@ def build_excel(notes, output_path, img_dir):
     for n in notes:
         all_urls.extend(n.get('meta', {}).get('noteImgs', []))
         for c in n.get('comments', []):
-            all_urls.extend(c.get('imgs', [])[:2])
+            if EMBED_COMMENT_IMAGES:
+                all_urls.extend(c.get('imgs', [])[:2])
     all_dl_map = download_all(all_urls, img_dir, 'img')
     comment_seq = 0
 
@@ -122,8 +144,8 @@ def build_excel(notes, output_path, img_dir):
         # ── 帖子标题行 ──
         ws.cell(row=row, column=1, value=f"{note_idx+1}.")
         ws.cell(row=row, column=2, value="帖子")
-        ws.cell(row=row, column=3, value=title[:30])
-        ws.cell(row=row, column=4, value=meta.get('desc', '')[:200])
+        ws.cell(row=row, column=3, value=title)
+        ws.cell(row=row, column=4, value=meta.get('desc', ''))
         ws.cell(row=row, column=5, value=bar)
         ws.cell(row=row, column=9, value=f"图片×{len(meta.get('noteImgs', []))}")
 
@@ -195,7 +217,7 @@ def build_excel(notes, output_path, img_dir):
 
                 # 评论图片
                 cmt_imgs = c.get('imgs', [])
-                if cmt_imgs:
+                if cmt_imgs and EMBED_COMMENT_IMAGES:
                     ws.row_dimensions[row].height = 60 * 0.75
                     for img_url in cmt_imgs[:2]:
                         fpath = all_dl_map.get(img_url, os.path.join(img_dir, 'cmt_%d.jpg' % comment_seq))
@@ -231,14 +253,17 @@ def main():
     os.makedirs(img_dir, exist_ok=True)
 
     notes = load_notes(path)
-    # 去重（按标题）
-    seen_titles = set()
+    # 去重（按 note_id，唯一键）。不同帖可能共享同一标题，按标题去重会吞掉不同帖的整篇数据，
+    # 故只对真正重复（同一 note_id 出现两次）跳过。
+    seen_ids = set()
     unique = []
     for n in notes:
-        t = n.get('meta', {}).get('title', '')
-        if t and t not in seen_titles:
-            seen_titles.add(t)
-            unique.append(n)
+        nid = n.get('note_id')
+        if nid in seen_ids:
+            continue
+        if nid:
+            seen_ids.add(nid)
+        unique.append(n)
     notes = unique
 
     print(f"加载 {len(notes)} 篇笔记")
