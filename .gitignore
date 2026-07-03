@@ -12,6 +12,7 @@ xhs_data/
 xhs_images/
 xhs_media_data/
 xai_data/
+x_data/          # x-to-feishu skill 抓取产物
 xhs_*.xlsx
 xhs_data_*/
 guide.md
