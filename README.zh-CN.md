@@ -230,20 +230,6 @@ XHS_WORKERS=4 python3 .claude/skills/xhs-media/scripts/xhs_media_download.py xhs
 - 每个技能内置了保护措施（随机延迟、并发上限、指数退避），但它们替代不了常识。
 - 经验法则：每个平台每天不超过 2–3 次批量运行。
 
-### 配置网关地址
-
-部分技能需要**模型 API 网关**来执行翻译、分类或视觉理解。设置以下环境变量：
-
-```bash
-# 必填：你的网关地址（OpenAI 兼容）
-export NEWAPI_BASE_URL="http://<YOUR_SERVER_IP>:3000/v1/chat/completions"
-
-# 必填：网关 API 令牌
-export NEWAPI_TOKEN="你的令牌"
-```
-
-将 `<YOUR_SERVER_IP>` 替换为你的实际网关服务器地址。令牌和地址必须与你的网关配置一致——详见对应技能的 `references/gateway.md`。
-
 ### 视觉理解模型
 
 涉及图片处理的技能（截图、社交媒体图片、图表）需要使用**视觉语言模型**（默认：`Qwen3-VL-8B`），运行在网关上。当任务包含：

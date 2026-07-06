@@ -230,20 +230,6 @@ Use them together: media for the files, crawler for the comments, then merge.
 - Built-in guards exist in each skill (randomized delays, bounded concurrency, exponential backoff), but they are not a substitute for common sense.
 - A good rule of thumb: no more than 2–3 batch runs per day per platform.
 
-### Configuration
-
-Some skills need a **model API gateway** for translation, classification, or vision understanding. Set these environment variables:
-
-```bash
-# Required: your gateway address (OpenAI-compatible)
-export NEWAPI_BASE_URL="http://<YOUR_SERVER_IP>:3000/v1/chat/completions"
-
-# Required: API token for the gateway
-export NEWAPI_TOKEN="your_token_here"
-```
-
-Replace `<YOUR_SERVER_IP>` with your actual gateway server address. The token and address must match what your gateway expects — see the skill's `references/gateway.md` for details.
-
 ### Vision models
 
 Skills that process images (screenshots, social media pictures, charts) use a **vision-language model** (default: `Qwen3-VL-8B`) running on the gateway. When the task involves:
