@@ -216,6 +216,43 @@ XHS_WORKERS=4 python3 .claude/skills/xhs-media/scripts/xhs_media_download.py xhs
 
 Use them together: media for the files, crawler for the comments, then merge.
 
+## How to Use
+
+### Browser setup
+
+- Use your everyday **Google Chrome** (or Chromium) — not a headless or throwaway browser.
+- **Log in first** to any sites you plan to scrape (X, Xiaohongshu, etc.) before starting the harness. The harness reuses your browser's cookies — it will not ask you to type credentials.
+- Connect via Chrome DevTools Protocol (see [install.md](install.md)).
+
+### Rate limiting & anti-scrape safety
+
+- **Don't overdo it.** Running large-scale scraping tasks repeatedly in a single day will trigger login walls, CAPTCHAs, or IP blocks on most platforms.
+- Built-in guards exist in each skill (randomized delays, bounded concurrency, exponential backoff), but they are not a substitute for common sense.
+- A good rule of thumb: no more than 2–3 batch runs per day per platform.
+
+### Configuration
+
+Some skills need a **model API gateway** for translation, classification, or vision understanding. Set these environment variables:
+
+```bash
+# Required: your gateway address (OpenAI-compatible)
+export NEWAPI_BASE_URL="http://<YOUR_SERVER_IP>:3000/v1/chat/completions"
+
+# Required: API token for the gateway
+export NEWAPI_TOKEN="your_token_here"
+```
+
+Replace `<YOUR_SERVER_IP>` with your actual gateway server address. The token and address must match what your gateway expects — see the skill's `references/gateway.md` for details.
+
+### Vision models
+
+Skills that process images (screenshots, social media pictures, charts) use a **vision-language model** (default: `Qwen3-VL-8B`) running on the gateway. When the task involves:
+- Translating image text (OCR)
+- Understanding image content
+- Classifying posts with visual context
+
+The skill sends both text and images to the model in a single call. Make sure your gateway channel includes the vision model — the default text-only channel will not work.
+
 ---
 
 [The Bitter Lesson of Agent Harnesses](https://browser-use.com/posts/bitter-lesson-agent-harnesses) · [Web Agents That Actually Learn](https://browser-use.com/posts/web-agents-that-actually-learn)

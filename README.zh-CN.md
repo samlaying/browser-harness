@@ -216,6 +216,43 @@ XHS_WORKERS=4 python3 .claude/skills/xhs-media/scripts/xhs_media_download.py xhs
 
 配合用：媒体抓文件，爬虫抓评论，最后合并。
 
+## 如何使用
+
+### 浏览器要求
+
+- 用你日常使用的 **Google Chrome**（或 Chromium）——不要用无头浏览器或一次性浏览器。
+- **先登录**你要爬取的站点（X、小红书等），再启动 harness。Harness 复用你浏览器的 cookies——它不会让你输入密码。
+- 通过 Chrome DevTools 协议连接（见 [install.md](install.md)）。
+
+### 速率限制与反爬安全
+
+- **不要贪多。** 一天内反复执行大规模爬取，绝大多数平台都会触发登录墙、验证码或 IP 封禁。
+- 每个技能内置了保护措施（随机延迟、并发上限、指数退避），但它们替代不了常识。
+- 经验法则：每个平台每天不超过 2–3 次批量运行。
+
+### 配置网关地址
+
+部分技能需要**模型 API 网关**来执行翻译、分类或视觉理解。设置以下环境变量：
+
+```bash
+# 必填：你的网关地址（OpenAI 兼容）
+export NEWAPI_BASE_URL="http://<YOUR_SERVER_IP>:3000/v1/chat/completions"
+
+# 必填：网关 API 令牌
+export NEWAPI_TOKEN="你的令牌"
+```
+
+将 `<YOUR_SERVER_IP>` 替换为你的实际网关服务器地址。令牌和地址必须与你的网关配置一致——详见对应技能的 `references/gateway.md`。
+
+### 视觉理解模型
+
+涉及图片处理的技能（截图、社交媒体图片、图表）需要使用**视觉语言模型**（默认：`Qwen3-VL-8B`），运行在网关上。当任务包含：
+- 提取图片中的文字（OCR）
+- 理解图片内容
+- 结合视觉信息分类帖子
+
+技能会把文本和图片一起发给模型，一次调用完成。请确保你的网关渠道包含了视觉模型——纯文本渠道无法处理这类任务。
+
 ---
 
 [The Bitter Lesson of Agent Harnesses](https://browser-use.com/posts/bitter-lesson-agent-harnesses) · [Web Agents That Actually Learn](https://browser-use.com/posts/web-agents-that-actually-learn)
