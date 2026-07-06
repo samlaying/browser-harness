@@ -27,7 +27,6 @@ import datetime
 _SCRIPTS = None
 for _c in (
     os.environ.get('XHS_MEDIA_SCRIPTS', ''),
-    '/Users/sam/03-Code/01-GitHub/browser-harness/.claude/skills/xhs-media/scripts',
     os.path.expanduser('~/03-Code/01-GitHub/browser-harness/.claude/skills/xhs-media/scripts'),
 ):
     if _c and os.path.isfile(os.path.join(_c, 'xhs_media_extract.py')):

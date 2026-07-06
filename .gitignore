@@ -12,7 +12,18 @@ xhs_data/
 xhs_images/
 xhs_media_data/
 xai_data/
-x_data/          # x-to-feishu skill 抓取产物
+x_data/              # x-to-feishu skill 抓取产物
 xhs_*.xlsx
 xhs_data_*/
 guide.md
+
+# Scraped data from various platforms (date-prefixed directories)
+20[0-9][0-9][0-1][0-9][0-3][0-9]_*/
+
+# Agent runtime files
+.agents/
+.codex/
+xhs-crawler-ext/
+
+# Temp artifacts
+_qrcode.png

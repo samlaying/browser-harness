@@ -5,7 +5,7 @@
 - Last Note: doctor summary: status=PASS, must_fix=0, should_fix=0, info=0, next=none
 
 ## Project Paths
-- Project Root: `/Users/sam/03-Code/01-GitHub/browser-harness`
+- Project Root: `~/03-Code/01-GitHub/browser-harness`
 - User Data: `.pensieve/`
 - Runtime State: `.pensieve/.state/`
 
