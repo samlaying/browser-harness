@@ -1,0 +1,156 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: #1f2328;
+  background: #f7f7f8;
+  font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+main {
+  max-width: 420px;
+  min-width: 320px;
+  padding: 16px;
+}
+
+header {
+  padding: 4px 0 12px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+p {
+  margin: 4px 0 0;
+  color: #666;
+}
+
+section {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #e1e4e8;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.status {
+  border-left: 4px solid #8c959f;
+}
+
+.status.ok {
+  border-left-color: #2da44e;
+}
+
+.status.bad {
+  border-left-color: #cf222e;
+}
+
+.status-title {
+  margin-bottom: 4px;
+  color: #57606a;
+  font-size: 12px;
+}
+
+label {
+  display: grid;
+  grid-template-columns: 86px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin: 9px 0;
+}
+
+input,
+select,
+button {
+  min-height: 32px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  color: #1f2328;
+  font: inherit;
+}
+
+input,
+select {
+  width: 100%;
+  padding: 4px 8px;
+}
+
+button {
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+button.primary {
+  border-color: #2da44e;
+  background: #2da44e;
+  color: #fff;
+}
+
+button.danger {
+  color: #cf222e;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tasks {
+  display: grid;
+  gap: 8px;
+}
+
+.task {
+  padding: 10px;
+  border: 1px solid #d8dee4;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.task.selected {
+  border-color: #0969da;
+  box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.12);
+}
+
+.task-title {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-meta {
+  margin-top: 4px;
+  color: #57606a;
+  font-size: 12px;
+}
+
+.progress {
+  height: 8px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eaeef2;
+}
+
+.progress > div {
+  height: 100%;
+  background: #2da44e;
+}

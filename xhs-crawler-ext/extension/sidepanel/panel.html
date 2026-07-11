@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>小红书采集助手</title>
+    <link rel="stylesheet" href="panel.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>小红书采集助手</h1>
+        <p>当前页面、本地保存、不上传云端</p>
+      </header>
+
+      <section class="status" id="pageStatus">
+        <div class="status-title">当前页面</div>
+        <div id="pageText">等待检测</div>
+      </section>
+
+      <section>
+        <h2>采集设置</h2>
+        <label>
+          <span>采集数量</span>
+          <input id="targetCount" type="number" min="1" max="200" value="20">
+        </label>
+        <label>
+          <span>评论</span>
+          <select id="commentMode">
+            <option value="all">尽量全部</option>
+            <option value="top">前几屏</option>
+            <option value="none">不采集</option>
+          </select>
+        </label>
+        <label>
+          <span>图片</span>
+          <select id="imageMode">
+            <option value="links">仅保存链接</option>
+          </select>
+        </label>
+        <label>
+          <span>速度</span>
+          <select id="speed">
+            <option value="conservative">保守</option>
+            <option value="standard">标准</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="actions">
+        <button id="detectBtn" type="button">检测页面</button>
+        <button id="startBtn" type="button" class="primary">开始采集</button>
+        <button id="pauseBtn" type="button">暂停</button>
+        <button id="resumeBtn" type="button">继续</button>
+        <button id="stopBtn" type="button">停止</button>
+      </section>
+
+      <section>
+        <h2>最近任务</h2>
+        <div id="tasks" class="tasks"></div>
+      </section>
+
+      <section class="actions">
+        <button id="exportJsonBtn" type="button">导出 JSON</button>
+        <button id="exportCsvBtn" type="button">导出 CSV</button>
+        <button id="exportXlsxBtn" type="button">导出 XLSX</button>
+        <button id="downloadImagesBtn" type="button">下载图片</button>
+        <button id="deleteBtn" type="button">删除选中任务</button>
+        <button id="clearBtn" type="button" class="danger">清空本地数据</button>
+      </section>
+    </main>
+    <script src="../lib/exceljs.min.js"></script>
+    <script src="panel.js"></script>
+  </body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "小红书本地采集助手",
+  "description": "在用户当前打开的小红书页面本地采集笔记、评论和图片，并导出 JSON/CSV/XLSX。",
+  "version": "0.1.0",
+  "permissions": [
+    "activeTab",
+    "declarativeNetRequest",
+    "downloads",
+    "sidePanel",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.xiaohongshu.com/*",
+    "https://*.xiaohongshu.com/*",
+    "https://*.xhscdn.com/*"
+  ],
+  "action": {
+    "default_title": "小红书采集助手"
+  },
+  "background": {
+    "service_worker": "background/service.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/panel.html"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "xhs_referer_rules",
+        "enabled": true,
+        "path": "rules/referer.json"
+      }
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.xiaohongshu.com/*"
+      ],
+      "js": [
+        "content/logic.js",
+        "content/page.js",
+        "content/crawler.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

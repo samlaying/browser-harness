@@ -12,7 +12,10 @@ xhs_data/
 xhs_images/
 xhs_media_data/
 xai_data/
-x_data/              # x-to-feishu skill 抓取产物
+# x-to-feishu skill 抓取产物
+x_data/
+# 个人/抓取的散落内容（非代码）
+X/
 xhs_*.xlsx
 xhs_data_*/
 guide.md
@@ -23,7 +26,6 @@ guide.md
 # Agent runtime files
 .agents/
 .codex/
-xhs-crawler-ext/
 
 # Temp artifacts
 _qrcode.png
