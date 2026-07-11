@@ -38,11 +38,18 @@ FIELDS = [
 ]
 COLS = [f["name"] for f in FIELDS]
 
+# 可选：指定 lark-cli profile（如多账号时用 SA 账号而非默认）
+PROFILE = os.environ.get("LARK_PROFILE", "")
+
 
 def run_lark(args):
-    r = subprocess.run(["lark-cli", "base"] + args, capture_output=True, text=True)
+    cmd = ["lark-cli", "base"]
+    if PROFILE:
+        cmd += ["--profile", PROFILE]
+    cmd += args
+    r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        print(f"✗ lark-cli 失败: {' '.join(args[:2])}")
+        print(f"✗ lark-cli 失败: {' '.join(args[:2])}" + (f" (profile={PROFILE})" if PROFILE else ""))
         print(r.stderr[-500:] or r.stdout[-500:])
         sys.exit(1)
     return r.stdout
@@ -92,7 +99,7 @@ def build_rows(tweets):
             int(t.get("likes", 0) or 0),
             "\n".join(t.get("imgs") or []) or "",
             t.get("url", "") if t.get("has_video") else "",
-            "",                       # OCR 列留空，待 ocr-space 恢复后回填
+            (e.get("img") or ""),       # 图片理解+OCR（VL 模型输出）
             t.get("url", "") or "",
         ])
     return rows

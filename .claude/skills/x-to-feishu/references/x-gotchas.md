@@ -45,17 +45,27 @@ X 长推在 feed 里被截断，带 `[data-testid="tweet-text-show-more-link"]`�
 
 ## 4. 图片原图：过滤 `/media/` + 升级 `name=orig`
 
-X 的图片：`https://pbs.twimg.com/media/<id>?format=jpg&name=medium`。两点：
+X 的图片：`https://pbs.twimg.com/media/<id>?format=jpg&name=medium`。三点：
 
 - **必须过滤路径含 `/media/`**——否则会把头像 `pbs.twimg.com/profile_images/...` 也收进来。
-- `name=medium` → `name=orig` 拿原图。
+- 存档用：`name=medium` → `name=orig` 拿原图（Excel 嵌图用 orig）。
+- **喂视觉模型时**：反用 `name=medium`（小、够理解）+ **必须 base64 直传**——X 有防盗链，网关/上游 fetcher 直接传 URL 报 "image URL must be valid and downloadable"。下载（带 `Referer: https://x.com/`）→ base64 → `data:image/jpeg;base64,...`。
 
 ```javascript
+// 抓取阶段（存 tweets.json 的 imgs）：orig
 var seen = {};
 var imgs = [...a.querySelectorAll('img')]
     .filter(i => /pbs\.twimg\.com\/media\//.test(i.src))
     .map(i => i.src.replace(/name=\w+/, 'name=orig'))
     .filter(u => seen[u] ? false : (seen[u] = true));
+```
+
+```python
+# 富化阶段（喂 Qwen3-VL）：降 medium + base64
+url = re.sub(r'name=\w+', 'name=medium', img_url)
+raw = urllib.request.urlopen(urllib.request.Request(url,
+    headers={'User-Agent':'Mozilla/5.0','Referer':'https://x.com/'}), timeout=15).read()
+data_url = "data:image/jpeg;base64," + base64.b64encode(raw).decode()
 ```
 
 ## 5. 视频没有可下载直链（blob）

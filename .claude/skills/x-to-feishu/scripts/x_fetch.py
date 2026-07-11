@@ -174,7 +174,7 @@ url = attach_feed()
 n = wait_for_articles()
 print(f"✓ attach {url} | 当前 {n} 条 article", flush=True)
 
-out_dir = os.environ.get("XFETCH_OUT") or f"x_data/{start_dt.strftime('%Y%m%d')}_fetch"
+out_dir = os.environ.get("XFETCH_OUTDIR") or os.environ.get("XFETCH_OUT") or f"x_data/{start_dt.strftime('%Y%m%d')}_fetch"
 os.makedirs(out_dir, exist_ok=True)
 max_tweets = int(os.environ.get("XFETCH_MAX_TWEETS", "30"))
 max_rounds = int(os.environ.get("XFETCH_MAX_ROUNDS", "60"))
