@@ -20,6 +20,16 @@ xhs_*.xlsx
 xhs_data_*/
 guide.md
 
+# Skills: only xhs-crawler is public — keep the rest local-only (untracked)
+.claude/skills/comment-to-topic/
+.claude/skills/doc-standard/
+.claude/skills/gemini-image-gen/
+.claude/skills/guizang-social-card-skill/
+.claude/skills/x-ai-scanner/
+.claude/skills/x-to-feishu/
+.claude/skills/xhs-media/
+.claude/skills/xhs-publish/
+
 # Scraped data from various platforms (date-prefixed directories)
 20[0-9][0-9][0-1][0-9][0-3][0-9]_*/
 
