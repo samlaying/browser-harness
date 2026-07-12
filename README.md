@@ -71,173 +71,21 @@ If you're not sure where to start, open an issue and we'll point you somewhere u
 
 Set `BH_DOMAIN_SKILLS=1` to enable [agent-workspace/domain-skills/](agent-workspace/domain-skills/) — community-contributed per-site playbooks `goto_url` surfaces by domain. Contribute via PR.
 
-## Xiaohongshu Crawler Skill
+## Bundled skills
 
-A Claude Code skill for batch crawling Xiaohongshu (小红书/RedNote) notes — search, extract content + comments, download images, and export to Excel.
+This fork ships a Claude Code skill under [`.claude/skills/`](.claude/skills/) that runs inside Claude Code via the harness:
 
-**This is a [Claude Code](https://claude.ai/code) skill**, not a standalone tool. It runs inside Claude Code via browser-harness CDP.
-
-### What it does
-
-1. **Search** — searches XHS for any keyword, reads results in waterfall layout order (left→right, top→bottom)
-2. **Crawl** — opens each note card, extracts title, description, post images, and all comments (including nested replies and AI Q&A summaries)
-3. **Download** — saves all post images and comment images to disk
-4. **Export** — generates an Excel file with:
-   - Color-coded post rows (each post gets a unique color)
-   - Indented comment rows (↳ replies shown with lighter font)
-   - Embedded images directly in cells
-   - One sheet, all data together
-
-### Quick start
-
-```bash
-# Search and crawl 5 notes
-bh <<'PY'
-search_xhs("ai产品经理焦虑", limit=5)
-PY
-
-# Export to Excel
-bh <<'PY'
-export_to_excel("xhs_ai_pm.xlsx")
-PY
-```
-
-### Output structure
-
-```
-Excel 单 Sheet 结构：
-┌──────────┬──────────┬────────┬──────────┬──────────┐
-│ 标题      │ 正文      │ 点赞数  │ 帖子图片   │ 作者      │
-│ AI产品经理…│ AI产品…  │ 1234   │ [嵌入图]  │ 用户A    │ ← 帖子行（蓝底）
-│  ↳ 回复    │ 好文！   │ 56     │          │ 用户B    │ ← 评论行（同蓝底）
-│  ↳ 回复    │ 同感     │ 12     │ [嵌入图]  │ 用户C    │ ← 带图评论
-├──────────┼──────────┼────────┼──────────┼──────────┤
-│ 下一篇帖子…│ ...      │ ...    │ [嵌入图]  │ 用户D    │ ← 绿底
-│ ...       │ ...      │ ...    │          │          │
-└──────────┴──────────┴────────┴──────────┴──────────┘
-```
-
-### Key features
-
-- **Waterfall layout sorting** — 5-column masonry grid, reads cards in visual order
-- **Comment expansion** — auto-expands "展开 N 条回复" and AI Q&A summaries
-- **Image embedding** — post images and comment images embedded directly in Excel cells
-- **Anti-scrape speed control** — randomized delays between actions to avoid bans
-- **Stall detection** — stops scrolling when no new comments load (THE END)
-
-### Files
-
-| File | Purpose |
-|------|---------|
-| `SKILL.md` | Skill entry point — instructions for Claude Code |
-| `scripts/xhs_crawl.py` | Single note crawl (pipe to browser-harness) |
-| `scripts/xhs_export.py` | Excel export with image embedding |
-| `references/selectors.md` | DOM selector reference for all XHS elements |
-| `references/waterfall-layout.md` | 5-column masonry sorting algorithm |
-| `references/gotchas.md` | Known issues and workarounds |
-
-### Requirements
-
-- Claude Code
-- browser-harness installed and connected to your browser
-- Xiaohongshu logged in (cookies must be active)
-- Python 3 with `openpyxl` (`pip install openpyxl`)
-
-## Xiaohongshu Media Skill
-
-A companion to the crawler above. Where the crawler grabs **text + comments** from the DOM, the media skill grabs **original videos + full-resolution images + avatars** by reading `window.__INITIAL_STATE__` (server-injected, with signed URLs) — then downloads each note's media immediately, while its signed video URL is still valid. (The DOM only exposes compressed thumbnails, and `<video>` is a blob/MSE stream you can't scrape directly.)
-
-### ⚠️ Log in to your own account first
-
-This skill drives **your real, logged-in Chrome session** through browser-harness. It reads `__INITIAL_STATE__` from the live page and reuses the browser's cookies for fallback requests, so:
-
-- Connect browser-harness to your everyday **Google Chrome** — not a headless or throwaway browser.
-- Log in to Xiaohongshu with **your own account** in that Chrome and keep that session's cookies active.
-- If you hit a login wall mid-run, log in yourself and retry — never type credentials from a screenshot.
-
-### What it does
-
-1. **Search** — opens the search page for a keyword and scrolls to load the waterfall
-2. **Collect** — reads `.note-item` cards in visual (waterfall) order
-3. **Per note** — close the previous overlay → click-verify → read `__INITIAL_STATE__` for the signed `masterUrl`, full-res images, and avatar
-4. **Download immediately** — media is downloaded the instant it's extracted (signed video URLs expire); video falls back `masterUrl → backupUrls → re-fetch a fresh signature via HTTP`
-5. **Export** — generates an Excel summary (title, author, type, video link, image count, avatar, likes/saves/comments, IP, thumbnail)
-
-### Rate limiting (built in, anti-ban)
-
-- **Randomized 3–8 s pause** between notes
-- **Bounded download pool** — `XHS_WORKERS` concurrent downloads (default 3), keeping the browser loop and downloads decoupled (no CDP contention)
-- **Exponential backoff** on failed downloads (`2^attempt` s)
-- **CDP reconnect every 5 notes** to survive long sessions
-
-### Quick start
-
-```bash
-XHS_KEYWORD="北京约会" XHS_LIMIT=20 XHS_WORKERS=4 \
-XHS_RUN_DIR="xhs_media_data/$(date +%Y%m%d)_北京约会" \
-browser-harness < .claude/skills/xhs-media/scripts/xhs_media_batch.py
-```
-
-Resume after a crash — every note's JSON is checkpointed, so re-running the downloader only fills the gaps:
-
-```bash
-XHS_WORKERS=4 python3 .claude/skills/xhs-media/scripts/xhs_media_download.py xhs_media_data/20260619_北京约会/
-```
-
-### Files
-
-| File | Purpose |
-|------|---------|
-| `.claude/skills/xhs-media/SKILL.md` | Skill entry point — instructions for Claude Code |
-| `scripts/xhs_media_extract.py` | Read `__INITIAL_STATE__` for media (PRIMARY) + HTTP fallback |
-| `scripts/xhs_media_batch.py` | Single-session batch driver + async download queue |
-| `scripts/xhs_media_download.py` | Downloader (video / images / avatar) + thread pool + Excel |
-| `scripts/video_transcriber.py` | Optional: Groq Whisper, mp4 → txt |
-| `scripts/ocr_processor.py` | Optional: OCR.space, jpg → txt |
-| `references/initial-state.md` | `__INITIAL_STATE__` field map |
-| `references/gotchas.md` | 11 known pitfalls |
-
-### Requirements
-
-- Claude Code
-- browser-harness installed and connected to your **logged-in** Chrome
-- Xiaohongshu logged in with **your own account** (cookies active)
-- `requests` + `openpyxl`, installed into the browser-harness Python env (the harness runs in its own uv-managed env, so a plain `pip install` won't be visible to it):
-  ```bash
-  uv pip install --python ~/.local/share/uv/tools/browser-harness/bin/python requests openpyxl
-  ```
-
-### Crawler vs. Media
-
-| Skill | Source | Gets |
-|-------|--------|------|
-| `xhs-crawler` | DOM | text + comments |
-| `xhs-media` | `__INITIAL_STATE__` | original video + full-res images + avatar |
-
-Use them together: media for the files, crawler for the comments, then merge.
+- [`xhs-crawler`](.claude/skills/xhs-crawler/SKILL.md) — batch-crawl Xiaohongshu notes (text + comments + images → Excel)
 
 ## How to Use
 
 ### Browser setup
 
-- Use your everyday **Google Chrome** (or Chromium) — not a headless or throwaway browser.
-- **Log in first** to any sites you plan to scrape (X, Xiaohongshu, etc.) before starting the harness. The harness reuses your browser's cookies — it will not ask you to type credentials.
-- Connect via Chrome DevTools Protocol (see [install.md](install.md)).
+Use your everyday **Google Chrome** (or Chromium) — not a headless or throwaway browser. **Log in first** to any sites you plan to scrape (X, Xiaohongshu, etc.); the harness reuses your browser's cookies and will not ask you to type credentials. Full connection steps and troubleshooting are in [install.md](install.md).
 
-### Rate limiting & anti-scrape safety
+### Rate limiting & anti-scrape
 
-- **Don't overdo it.** Running large-scale scraping tasks repeatedly in a single day will trigger login walls, CAPTCHAs, or IP blocks on most platforms.
-- Built-in guards exist in each skill (randomized delays, bounded concurrency, exponential backoff), but they are not a substitute for common sense.
-- A good rule of thumb: no more than 2–3 batch runs per day per platform.
-
-### Vision models
-
-Skills that process images (screenshots, social media pictures, charts) use a **vision-language model** (default: `Qwen3-VL-8B`) running on the gateway. When the task involves:
-- Translating image text (OCR)
-- Understanding image content
-- Classifying posts with visual context
-
-The skill sends both text and images to the model in a single call. Make sure your gateway channel includes the vision model — the default text-only channel will not work.
+Don't overdo it — repeated large-scale scraping in a single day triggers login walls, CAPTCHAs, or IP blocks. Each skill has built-in guards (randomized delays, bounded concurrency, exponential backoff), but they are not a substitute for common sense.
 
 ---
 
