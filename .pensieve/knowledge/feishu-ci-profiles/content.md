@@ -35,11 +35,10 @@ SA 账号根目录文件夹很多且较杂，按主题归到下表的已知文�
 | 文件夹 | folder_token | 用途 |
 |---|---|---|
 | 职场 | `BzDPfro1ol4pmfdHUsqc1gcln0B` | 职场类内容（小红书职场选题调研等） |
+| 自媒体工具箱 | `PzUxfMlciltZehdLJiXcZlcgnSe` | 自媒体工具产物 + 工具索引文档统一落点（2026-07-11 建，内含 docx `Gzi6dPNyao9p18xbmTsc353lnfd`） |
 
 - 职场文件夹 URL：https://pcnlp18cy9bm.feishu.cn/drive/folder/BzDPfro1ol4pmfdHUsqc1gcln0B
-- 上传内容到此文件夹（**用 docx 导入，别建 markdown 文件类型——md 读着难受**）：`lark-cli --profile cli_aa823d7922f8dbc3 drive +import --as user --type docx --folder-token BzDPfro1ol4pmfdHUsqc1gcln0B --file <相对路径.md> --name <名>`
-  - `--file` 只收相对路径（cd 到对应目录或用相对路径），`--type docx` 把本地 .md 导入成飞书在线文档
-  - 也可以传 .docx 源文件，同样 `--type docx`
+- 上传命令（导入 docx、设公开等完整操作）见 [[knowledge/feishu-lark-cli-ops/content]]；新主题先建专属文件夹，别散落根目录。列文件夹：`drive files list --as user --profile <profile>`。
 
 ### 凭证 / token 在哪
 

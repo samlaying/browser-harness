@@ -1,16 +1,16 @@
 # Pensieve Project State
 
 ## Lifecycle State
-- Last Event: self-improve
-- Last Note: 新增 knowledge: feishu-ci-profiles（三个 profile 映射 + 主辅定位）
+- Last Event: doctor
+- Last Note: doctor summary: status=PASS, must_fix=0, should_fix=0, info=0, next=none
 
 ## Project Paths
-- Project Root: `~/03-Code/01-GitHub/browser-harness`
+- Project Root: `/Users/sam/03-Code/01-GitHub/browser-harness`
 - User Data: `.pensieve/`
 - Runtime State: `.pensieve/.state/`
 
 ## Short-Term
-- Total: 0
+- Total: 1
 - Due for refine: 0 (created 7+ days ago)
 
 ## Graph
