@@ -228,3 +228,21 @@ def safe_js(s):
         except Exception:
             return None
 ```
+
+## 19. AI 搜索视图下原标签 goto_url 卡片不布局（2026-07-28）
+
+**问题**：搜索页现在默认进入 AI 搜索视图——URL 被重写成 `&type=51`、`<html>` 加 `ai-layout-active` class。此视图下用**原标签 `goto_url`**（SPA 内部导航）进入搜索页，卡片瀑布流**不布局**：
+
+- `.feeds-container` 高度塌缩为 0；
+- 22 张 `.note-item`（`position:absolute`）全堆叠在同一坐标 `(24,144)`，collect 出的中心坐标全相同；
+- `elementFromPoint(cardX, cardY)` 穿透未布局的卡片命中 `<html class="ai-layout-active">`；
+- 点击验证（#17）全部失败，每篇重试 3 次后 `failed(click_verify_failed)`，整批爬空。
+
+**误诊陷阱**：易误判为 Retina 坐标偏移（#17）或全屏覆盖层。实测 `getBoundingClientRect` 与 `elementFromPoint` 同为 CSS px 坐标系（非 Retina），且无覆盖层——是卡片容器本身塌缩。`source`/`type` 参数也不是关键：new_tab 后小红书仍把 URL 重写成 `&type=51`、class 仍显 `ai-layout-active`，但卡片却正常布局了。
+
+**解决**：入口开**全新 tab**（`new_tab(url)`）而非原标签 `goto_url`。全新页加载即使 class 仍显 `ai-layout-active`，卡片也会正常瀑布流布局（实测 `.feeds-container` h:3204、3 列分散、`elementFromPoint` 命中 `A.cover→.note-item`）。这是 #16（SPA 重新导航不渲染卡片）的变体，解法同为开全新 tab。
+
+**诊断卡片是否塌缩**：
+```javascript
+document.querySelector('.feeds-container').getBoundingClientRect().height  // 0 = 塌缩; >0 = 正常
+```

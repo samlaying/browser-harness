@@ -1,4 +1,5 @@
 import os, sys, urllib.request
+from .local_browser import launch_profile
 
 # Windows default stdout encoding is cp1252, which can't encode the 🐴 marker
 # helpers prepend to tab titles (or anything else outside Latin-1). Force UTF-8
@@ -44,6 +45,8 @@ Commands:
   browser-harness doctor --fix-snap   print how to fix Snap Chromium blocking CDP (Linux)
   browser-harness --update [-y]    pull the latest version (agents: pass -y)
   browser-harness --reload         stop the daemon so next call picks up code changes
+  browser-harness --launch-profile <path> [--port <port>] [--background]
+                                  launch and attach a dedicated local Chrome profile
 """
 
 USAGE = """Usage:
@@ -99,6 +102,23 @@ def main():
         restart_daemon()
         print("daemon stopped — will restart fresh on next call")
         return
+    if args and args[0] == "--launch-profile":
+        if len(args) < 2:
+            raise SystemExit("usage: browser-harness --launch-profile <profile-path> [--port <port>] [--background]")
+        profile = args[1]
+        port = 9224
+        background = False
+        rest = args[2:]
+        if "--background" in rest:
+            background = True
+            rest.remove("--background")
+        if rest:
+            if len(rest) != 2 or rest[0] != "--port":
+                raise SystemExit("usage: browser-harness --launch-profile <profile-path> [--port <port>] [--background]")
+            port = int(rest[1])
+        _, endpoint = launch_profile(profile, port=port, background=background)
+        os.environ["BU_CDP_URL"] = endpoint
+        args = []
     if args and args[0] == "--debug-clicks":
         os.environ["BH_DEBUG_CLICKS"] = "1"
         args = args[1:]

@@ -378,8 +378,14 @@ def close_overlay():
 
 def wait_for_comments():
     """滚动加载评论（stall≥5 判底）+ 展开 .show-more/.expand-btn（hover-gated）。见 gotcha #3/#10。"""
+    # 硬超时预算：评论/展开两段循环共用。导航漂移到 /explore 详情页时，.show-more 点击会
+    # 持续触发评论懒加载 → 评论数一直涨 → stall 与 no_progress 都无法累积判停，循环跑满
+    # 上限（60+80 次）单篇卡 5~7min（2026-08-02 命中）。75s 对正常笔记足够（120 评论约 30~60s）。
+    deadline = time.time() + 75
     last = 0; stall = 0
     for _ in range(60):
+        if time.time() > deadline:
+            break
         safe_js('var s=document.querySelector(".note-scroller");if(s){s.scrollTop=s.scrollHeight;}return 1;')
         time.sleep(delay_scroll())
         c = safe_js('return document.querySelectorAll(".comment-item").length;') or 0
@@ -389,7 +395,11 @@ def wait_for_comments():
             stall = 0; last = c
         if stall >= 5:
             break
+    last_comments = 0
+    no_progress = 0
     for _ in range(80):
+        if time.time() > deadline:
+            break
         btn = safe_js(r'''
 var best = null, bestY = Infinity;
 var all1 = document.querySelectorAll('.show-more');
@@ -419,6 +429,14 @@ return best;
         safe_cdp("Input.dispatchMouseEvent", type="mousePressed", x=btn['x'], y=btn['y'], button="left", clickCount=1)
         safe_cdp("Input.dispatchMouseEvent", type="mouseReleased", x=btn['x'], y=btn['y'], button="left", clickCount=1)
         time.sleep(delay_expand())
+        # 无进展保护：连续点击后评论数不增长即退出。导航漂移到 /explore 详情页时
+        # .show-more 点击无效却始终存在，会空转到 80 次上限 → 单篇卡数分钟（2026-08-02
+        # 「后脑勺脂溢性皮炎」第5篇命中，COMMENTS 稳定 20、SHOW_MORE 稳定 10 空转 9min）。
+        _now_c = safe_js('return document.querySelectorAll(".comment-item").length;') or 0
+        no_progress = 0 if _now_c > last_comments else no_progress + 1
+        last_comments = _now_c
+        if no_progress >= 4:
+            break
 
 
 def extract_note(note_id):
@@ -514,15 +532,33 @@ def run_batch():
 
     ensure_daemon(); ensure_real_tab()
 
-    # 1) 会话首次导航到搜索页（不触发 gotcha #16）
+    # 1) 会话首次进入搜索页：开全新 tab（new_tab），不在原标签 goto_url。
+    #    小红书搜索页现在默认进 AI 搜索视图（URL 被 &type=51 重写、<html> 加 ai-layout-active），
+    #    此视图下原标签 goto_url（SPA 内部导航）不触发卡片瀑布流布局——容器 .feeds-container
+    #    塌缩成 h:0，22 张卡片 position:absolute 全堆叠在 (24,144)，elementFromPoint 穿透命中
+    #    <html> → 点击验证全失败（gotcha #19，2026-07-28「2周年礼物」命中）。
+    #    new_tab 全新页加载即使 class 仍显 ai-layout-active，卡片也会正常瀑布流布局
+    #    （实测 .feeds-container h:3204、3 列分散、elementFromPoint 命中 A.cover→.note-item）。
+    #    这是 gotcha #16（SPA 重新导航不渲染卡片）的变体：解法同样是开全新 tab。
+    #    关键词用原始中文：new_tab 对预编码 URL 会把 '%' 再编码成 %25 → 双重乱码；
+    #    传原始中文由浏览器单次编码（已验证）。reanchor_search 复用同一 url。
     url = ('https://www.xiaohongshu.com/search_result?keyword='
-           + encode_keyword(keyword) + '&source=web_explore_feed')
-    new_tab(url)
+           + keyword + '&source=web_explore_feed')
+    new_tab(url)                                # 全新 tab 保证卡片瀑布流正常布局
     wait_for_load()
     # 2) 收集卡片：先在 scrollY=0 收（拿真正的顶部），不足目标再向下增量加载。
     #    小红书是虚拟滚动——往下滚会把顶部卡片从 DOM 移除，故不能「先滚再收」（会漏掉顶部）。
     for _ in range(40):                      # SPA 冷启动慢，轮询等顶部卡片渲染
         if safe_js('return document.querySelectorAll(".note-item").length;'):
+            break
+        time.sleep(0.5)
+    # 等瀑布流布局落地：卡片 position:absolute 出现在 DOM 早于容器撑高——此刻 collect 拿到的
+    # 中心坐标全相同（堆叠在左上角），elementFromPoint 穿透未布局卡片、点击验证全失败（gotcha #19）。
+    # 实测「B端产品经理面试题」首张卡片出现瞬间 feeds-container h:0，约 2~3s 后才撑到 h:3711、
+    # 坐标分散为 5 列。用容器高度 >0 作为「布局已落地」信号，最多再等 15s。
+    for _ in range(30):
+        fh = safe_js('var fc=document.querySelector(".feeds-container"); return fc?fc.getBoundingClientRect().height:0;') or 0
+        if fh > 0:
             break
         time.sleep(0.5)
     global CARD_Y_MAP

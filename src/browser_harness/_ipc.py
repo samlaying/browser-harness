@@ -20,6 +20,10 @@ _RUNTIME = Path(BH_RUNTIME_DIR or (tempfile.gettempdir() if IS_WINDOWS else "/tm
 _TMP.mkdir(parents=True, exist_ok=True)
 _RUNTIME.mkdir(parents=True, exist_ok=True)
 _NAME_RE = re.compile(r"\A[A-Za-z0-9_-]{1,64}\Z")
+# Browser automation requests may contain large prompts or extracted page text.
+# asyncio's default StreamReader line limit (64 KiB) is too small for those
+# JSONL IPC messages and causes the daemon to close the socket mid-request.
+IPC_LINE_LIMIT = 4 * 1024 * 1024
 
 # Set by serve() on Windows. Daemon's handle() requires every request to carry
 # this token (TCP loopback has no chmod-equivalent so any local process could
@@ -166,12 +170,12 @@ async def serve(name, handler):
         if os.path.exists(path): os.unlink(path)
         # umask 0o077 makes bind() create the socket as 0600 — no TOCTOU window before chmod.
         old_umask = os.umask(0o077)
-        try: server = await asyncio.start_unix_server(handler, path=path)
+        try: server = await asyncio.start_unix_server(handler, path=path, limit=IPC_LINE_LIMIT)
         finally: os.umask(old_umask)
         _server_token = None
         async with server: await asyncio.Event().wait()
         return
-    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    server = await asyncio.start_server(handler, "127.0.0.1", 0, limit=IPC_LINE_LIMIT)
     port = server.sockets[0].getsockname()[1]
     _server_token = secrets.token_hex(32)
     pf = port_path(name)

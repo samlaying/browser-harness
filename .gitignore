@@ -11,7 +11,7 @@ uv.lock
 xhs_data/
 xhs_images/
 xhs_media_data/
-xai_data/
+xfeed_data/
 # x-to-feishu skill 抓取产物
 x_data/
 # 个人/抓取的散落内容（非代码）
@@ -25,7 +25,7 @@ guide.md
 .claude/skills/doc-standard/
 .claude/skills/gemini-image-gen/
 .claude/skills/guizang-social-card-skill/
-.claude/skills/x-ai-scanner/
+.claude/skills/x-feed-scanner/
 .claude/skills/x-to-feishu/
 .claude/skills/xhs-media/
 .claude/skills/xhs-publish/
